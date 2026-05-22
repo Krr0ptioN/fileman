@@ -80,7 +80,7 @@ pub enum VimCommandStep {
 }
 
 pub fn is_prefix(sequence: &str) -> bool {
-    matches!(sequence, "c" | "d" | "g" | "n" | "u" | "y" | "z")
+    matches!(sequence, "c" | "d" | "g" | "n" | "p" | "u" | "y" | "z")
 }
 
 #[cfg(test)]
