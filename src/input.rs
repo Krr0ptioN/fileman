@@ -424,10 +424,16 @@ pub(crate) fn handle_keyboard(
         return;
     }
     if app.pending_op.is_some() {
+        if handle_vim_pending_op(ctx, input, app) {
+            ctx.request_repaint();
+            return;
+        }
         if input.key_pressed(egui::Key::Enter) {
+            app.vim_command.clear();
             confirm_pending_op(app);
         }
         if input.key_pressed(egui::Key::Escape) {
+            app.vim_command.clear();
             app.clear_pending_op();
         }
         ctx.request_repaint();
@@ -610,6 +616,10 @@ pub(crate) fn handle_keyboard(
             return;
         }
     }
+    if handle_vim_text_input(ctx, input, app, cache) {
+        ctx.request_repaint();
+        return;
+    }
     let window_rows = active_window_rows(app, cache);
     let tab_pressed = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Tab));
     if tab_pressed {
@@ -723,75 +733,8 @@ pub(crate) fn handle_keyboard(
         open_search(app, core::SearchMode::Name);
     }
     if input.key_pressed(egui::Key::Enter) {
-        if app.search_ui == app_state::SearchUiState::Open {
-            if matches!(
-                app.get_active_panel().browser().browser_mode,
-                core::BrowserMode::Search { .. }
-            ) {
-                // Fall through to open selected result below.
-            } else {
-                start_search(app);
-                app.search_ui = app_state::SearchUiState::Closed;
-                ctx.request_repaint();
-                // Don't fall through — search just started, no results to navigate yet.
-            }
-        } else if matches!(
-            app.get_active_panel().browser().browser_mode,
-            core::BrowserMode::Search { .. }
-        ) {
-            app.push_history(app.active_panel);
-            let panel = app.get_active_panel();
-            let browser = panel.browser();
-            let entry = browser.entries.get(browser.selected_index).cloned();
-            if let Some(entry) = entry {
-                match entry.location {
-                    core::EntryLocation::Fs(path) => {
-                        if entry.is_dir {
-                            load_fs_directory_async(app, path, app.active_panel, None);
-                        } else if let Some(parent) = path.parent() {
-                            let name = path
-                                .file_name()
-                                .and_then(|s| s.to_str())
-                                .map(|s| s.to_string());
-                            load_fs_directory_async(
-                                app,
-                                parent.to_path_buf(),
-                                app.active_panel,
-                                name,
-                            );
-                        }
-                    }
-                    core::EntryLocation::Remote { host, path } => {
-                        if entry.is_dir {
-                            crate::load_sftp_directory_async(
-                                app,
-                                &host,
-                                &path,
-                                app.active_panel,
-                                None,
-                            );
-                        } else {
-                            let slash = path.rfind('/').unwrap_or(0);
-                            let parent = if slash == 0 { "/" } else { &path[..slash] };
-                            let name = path[slash + 1..].to_string();
-                            crate::load_sftp_directory_async(
-                                app,
-                                &host,
-                                parent,
-                                app.active_panel,
-                                Some(name),
-                            );
-                        }
-                    }
-                    core::EntryLocation::Container { .. } => {}
-                }
-            }
-            app.search_ui = app_state::SearchUiState::Closed;
-        } else if app.theme_picker_open {
-            app.apply_selected_theme();
-        } else {
-            open_selected(app);
-        }
+        activate_selected(app);
+        ctx.request_repaint();
     }
     if let app_state::PanelMode::Preview(ref mut preview) = app.panel_mut(app.active_panel).mode {
         let line = preview.line_height.max(16.0);
@@ -921,6 +864,7 @@ pub(crate) fn handle_keyboard(
         app.toggle_preview();
     }
     if input.key_pressed(egui::Key::Escape) {
+        app.vim_command.clear();
         if app.theme_picker_open {
             app.close_theme_picker();
         } else {
@@ -977,6 +921,628 @@ pub(crate) fn handle_keyboard(
     if input.key_pressed(egui::Key::F8) || ctrl_x {
         app.prepare_delete_selected();
         ctx.request_repaint();
+    }
+}
+
+fn handle_vim_pending_op(
+    ctx: &egui::Context,
+    input: &egui::InputState,
+    app: &mut app_state::AppState,
+) -> bool {
+    if !matches!(
+        app.pending_op,
+        Some(app_state::PendingOp::Copy { .. } | app_state::PendingOp::Move { .. })
+    ) {
+        return false;
+    }
+
+    let chars = vim_text_chars(input);
+    if chars.is_empty() {
+        return false;
+    }
+
+    let mut handled = false;
+    for ch in chars {
+        if ch != 'p' {
+            app.vim_command.clear();
+            continue;
+        }
+        handled = true;
+        if app.vim_command.pending == "p" {
+            app.vim_command.clear();
+            confirm_pending_op(app);
+        } else {
+            app.vim_command.pending = "p".to_string();
+            app.vim_command.count = None;
+        }
+    }
+
+    if handled {
+        clear_text_events(ctx);
+    }
+    handled
+}
+
+fn handle_vim_text_input(
+    ctx: &egui::Context,
+    input: &egui::InputState,
+    app: &mut app_state::AppState,
+    cache: &UiCache,
+) -> bool {
+    if !vim_accepts_text_input(app) {
+        return false;
+    }
+
+    let chars = vim_text_chars(input);
+    if chars.is_empty() {
+        return false;
+    }
+
+    let mut handled = false;
+    for ch in chars {
+        handled |= apply_vim_char(app, cache, ch);
+    }
+    if handled {
+        clear_text_events(ctx);
+    }
+    handled
+}
+
+fn vim_accepts_text_input(app: &app_state::AppState) -> bool {
+    if app.search_ui == app_state::SearchUiState::Open
+        || app.quick_jump.is_some()
+        || app.pending_op.is_some()
+        || app.props_dialog.is_some()
+        || app.error_message.is_some()
+        || app.elevation_prompt.is_some()
+    {
+        return false;
+    }
+    if app.preview_panel().is_some_and(|preview| preview.find_open) {
+        return false;
+    }
+    let panel = app.panel(app.active_panel);
+    if panel.browser().inline_rename.is_some() {
+        return false;
+    }
+    match panel.mode {
+        app_state::PanelMode::Browser => true,
+        app_state::PanelMode::Preview(ref preview) => !preview.find_open,
+        app_state::PanelMode::Edit(_) | app_state::PanelMode::Help(_) => false,
+    }
+}
+
+fn vim_text_chars(input: &egui::InputState) -> Vec<char> {
+    if input.modifiers.ctrl || input.modifiers.alt || input.modifiers.mac_cmd {
+        return Vec::new();
+    }
+    let mut chars = Vec::new();
+    for event in &input.events {
+        if let egui::Event::Text(ref text) = *event {
+            chars.extend(text.chars().filter(|ch| !ch.is_control()));
+        }
+    }
+    chars
+}
+
+fn clear_text_events(ctx: &egui::Context) {
+    ctx.input_mut(|input| {
+        input
+            .events
+            .retain(|event| !matches!(event, egui::Event::Text(_)));
+    });
+}
+
+fn apply_vim_char(app: &mut app_state::AppState, cache: &UiCache, ch: char) -> bool {
+    if ch.is_whitespace() {
+        return false;
+    }
+
+    let explicit_count = app.vim_command.count.take();
+    if app.vim_command.pending.is_empty() && ch.is_ascii_digit() {
+        if ch == '0' && explicit_count.is_none() {
+            let handled = execute_vim_sequence(app, cache, "0", 1, false);
+            app.vim_command.clear();
+            return handled;
+        }
+        let digit = ch.to_digit(10).unwrap_or(0) as usize;
+        let base = explicit_count.unwrap_or(0);
+        app.vim_command.count = Some(base.saturating_mul(10).saturating_add(digit).min(9999));
+        return true;
+    }
+
+    let had_pending = !app.vim_command.pending.is_empty();
+    let mut sequence = std::mem::take(&mut app.vim_command.pending);
+    sequence.push(ch);
+    if is_vim_prefix(&sequence) {
+        app.vim_command.pending = sequence;
+        app.vim_command.count = explicit_count;
+        return true;
+    }
+
+    let count = explicit_count.unwrap_or(1).max(1);
+    let explicit = explicit_count.is_some();
+    let handled = execute_vim_sequence(app, cache, sequence.as_str(), count, explicit);
+    app.vim_command.clear();
+    if !handled && had_pending {
+        return apply_vim_char(app, cache, ch);
+    }
+    handled
+}
+
+fn is_vim_prefix(sequence: &str) -> bool {
+    matches!(sequence, "c" | "d" | "g" | "n" | "u" | "y" | "z")
+}
+
+fn execute_vim_sequence(
+    app: &mut app_state::AppState,
+    cache: &UiCache,
+    sequence: &str,
+    count: usize,
+    explicit_count: bool,
+) -> bool {
+    if app.theme_picker_open {
+        return execute_vim_theme_sequence(app, sequence, count);
+    }
+
+    if matches!(
+        app.panel(app.active_panel).mode,
+        app_state::PanelMode::Preview(_)
+    ) {
+        return execute_vim_preview_sequence(app, sequence, count);
+    }
+
+    if !matches!(
+        app.panel(app.active_panel).mode,
+        app_state::PanelMode::Browser
+    ) {
+        return false;
+    }
+
+    execute_vim_browser_sequence(app, cache, sequence, count, explicit_count)
+}
+
+fn execute_vim_theme_sequence(app: &mut app_state::AppState, sequence: &str, count: usize) -> bool {
+    match sequence {
+        "j" | "J" => {
+            for _ in 0..count {
+                app.select_next_theme();
+            }
+            true
+        }
+        "k" | "K" => {
+            for _ in 0..count {
+                app.select_prev_theme();
+            }
+            true
+        }
+        "l" => {
+            app.apply_selected_theme();
+            true
+        }
+        "h" | "q" => {
+            app.close_theme_picker();
+            true
+        }
+        _ => false,
+    }
+}
+
+fn execute_vim_preview_sequence(
+    app: &mut app_state::AppState,
+    sequence: &str,
+    count: usize,
+) -> bool {
+    match sequence {
+        "j" => scroll_active_preview_lines(app, count as f32),
+        "k" => scroll_active_preview_lines(app, -(count as f32)),
+        "J" => scroll_active_preview_pages(app, count as f32 * 0.5),
+        "K" => scroll_active_preview_pages(app, -(count as f32 * 0.5)),
+        "gg" | "0" => set_active_preview_scroll(app, PreviewScrollTarget::Top),
+        "G" => set_active_preview_scroll(app, PreviewScrollTarget::Bottom),
+        "/" => {
+            if let app_state::PanelMode::Preview(ref mut preview) =
+                app.panel_mut(app.active_panel).mode
+            {
+                preview.find_open = true;
+                preview.find_focus = true;
+                return true;
+            }
+            false
+        }
+        "n" => {
+            preview_find_next(app);
+            true
+        }
+        "N" => {
+            preview_find_prev(app);
+            true
+        }
+        "h" | "q" => {
+            app.clear_preview();
+            true
+        }
+        _ => false,
+    }
+}
+
+fn execute_vim_browser_sequence(
+    app: &mut app_state::AppState,
+    cache: &UiCache,
+    sequence: &str,
+    count: usize,
+    explicit_count: bool,
+) -> bool {
+    let window_rows = active_window_rows(app, cache);
+    match sequence {
+        "j" => select_browser_relative(app, count as isize, window_rows),
+        "k" => select_browser_relative(app, -(count as isize), window_rows),
+        "J" => select_browser_relative(
+            app,
+            half_page_count(window_rows, count) as isize,
+            window_rows,
+        ),
+        "K" => select_browser_relative(
+            app,
+            -(half_page_count(window_rows, count) as isize),
+            window_rows,
+        ),
+        "gg" => {
+            let index = if explicit_count {
+                count.saturating_sub(1)
+            } else {
+                0
+            };
+            select_browser_line(app, index, window_rows)
+        }
+        "G" => {
+            if explicit_count {
+                select_browser_line(app, count.saturating_sub(1), window_rows)
+            } else {
+                select_browser_last(app, window_rows)
+            }
+        }
+        "0" => select_browser_line(app, 0, window_rows),
+        "h" => {
+            open_parent(app, window_rows);
+            true
+        }
+        "l" => {
+            activate_selected(app);
+            true
+        }
+        "H" => {
+            if let Some(snapshot) = app.pop_history_back(app.active_panel) {
+                apply_panel_snapshot(app, app.active_panel, snapshot);
+            }
+            true
+        }
+        "L" => {
+            if let Some(snapshot) = app.pop_history_forward(app.active_panel) {
+                apply_panel_snapshot(app, app.active_panel, snapshot);
+            }
+            true
+        }
+        "/" => {
+            open_search(app, core::SearchMode::Name);
+            true
+        }
+        "?" => {
+            open_search(app, core::SearchMode::Content);
+            true
+        }
+        "i" => {
+            app.toggle_preview();
+            true
+        }
+        "e" => {
+            app.prepare_edit_selected();
+            true
+        }
+        "E" | "o" | "r" => {
+            open_selected_external(app);
+            true
+        }
+        "R" => {
+            refresh_active_panel(app);
+            true
+        }
+        "v" => toggle_marked_entries(app, count, window_rows),
+        "yy" => {
+            if !other_panel_preview(app) {
+                app.prepare_copy_selected();
+            }
+            true
+        }
+        "dd" => {
+            if !other_panel_preview(app) {
+                app.prepare_move_selected();
+            }
+            true
+        }
+        "D" | "dD" | "x" => {
+            app.prepare_delete_selected();
+            true
+        }
+        "C" | "cc" | "cw" => {
+            app.prepare_rename_selected();
+            true
+        }
+        "nf" => {
+            app.start_inline_new_file();
+            true
+        }
+        "nd" => {
+            app.start_inline_new_dir();
+            true
+        }
+        "gt" => {
+            app.get_active_panel_mut().next_tab();
+            refresh_active_panel(app);
+            true
+        }
+        "gT" => {
+            app.get_active_panel_mut().prev_tab();
+            refresh_active_panel(app);
+            true
+        }
+        "gn" => {
+            app.get_active_panel_mut().new_tab();
+            refresh_active_panel(app);
+            true
+        }
+        "gc" => {
+            app.get_active_panel_mut().close_tab();
+            true
+        }
+        "g?" => {
+            app.toggle_help();
+            true
+        }
+        "gh" => navigate_local_shortcut(app, LocalShortcut::Home),
+        "gr" | "g/" => navigate_local_shortcut(app, LocalShortcut::Root),
+        "zt" => position_selection(app, window_rows, SelectionPosition::Top),
+        "zz" => position_selection(app, window_rows, SelectionPosition::Center),
+        "zb" => position_selection(app, window_rows, SelectionPosition::Bottom),
+        "uv" | "uV" => {
+            app.get_active_panel_mut().browser_mut().marked.clear();
+            true
+        }
+        "q" => {
+            if app.preview_panel_side().is_some() {
+                app.clear_preview();
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
+fn half_page_count(window_rows: usize, count: usize) -> usize {
+    window_rows.max(2).div_ceil(2).saturating_mul(count)
+}
+
+fn select_browser_relative(
+    app: &mut app_state::AppState,
+    delta: isize,
+    window_rows: usize,
+) -> bool {
+    let (len, current) = {
+        let browser = app.get_active_panel().browser();
+        (browser.entries.len(), browser.selected_index)
+    };
+    if len == 0 {
+        return true;
+    }
+    let index = if delta.is_negative() {
+        current.saturating_sub(delta.unsigned_abs())
+    } else {
+        current.saturating_add(delta as usize).min(len - 1)
+    };
+    app.select_entry(index, window_rows);
+    true
+}
+
+fn select_browser_line(app: &mut app_state::AppState, index: usize, window_rows: usize) -> bool {
+    let len = app.get_active_panel().browser().entries.len();
+    if len == 0 {
+        return true;
+    }
+    app.select_entry(index.min(len - 1), window_rows);
+    true
+}
+
+fn select_browser_last(app: &mut app_state::AppState, window_rows: usize) -> bool {
+    let len = app.get_active_panel().browser().entries.len();
+    if len > 0 {
+        app.select_entry(len - 1, window_rows);
+    }
+    true
+}
+
+fn toggle_marked_entries(app: &mut app_state::AppState, count: usize, window_rows: usize) -> bool {
+    for _ in 0..count {
+        let (idx, len, name) = {
+            let browser = app.get_active_panel().browser();
+            let name = browser
+                .entries
+                .get(browser.selected_index)
+                .filter(|entry| entry.name != "..")
+                .map(|entry| entry.name.clone());
+            (browser.selected_index, browser.entries.len(), name)
+        };
+        let Some(name) = name else { break };
+        {
+            let browser = app.get_active_panel_mut().browser_mut();
+            if !browser.marked.remove(&name) {
+                browser.marked.insert(name);
+            }
+        }
+        if idx + 1 < len {
+            app.select_entry(idx + 1, window_rows);
+        }
+    }
+    true
+}
+
+fn other_panel_preview(app: &app_state::AppState) -> bool {
+    app.preview_panel_side()
+        .is_some_and(|side| side != app.active_panel)
+}
+
+enum LocalShortcut {
+    Home,
+    Root,
+}
+
+fn navigate_local_shortcut(app: &mut app_state::AppState, shortcut: LocalShortcut) -> bool {
+    let path = match shortcut {
+        LocalShortcut::Home => std::env::var("HOME")
+            .ok()
+            .or_else(|| std::env::var("USERPROFILE").ok())
+            .map(PathBuf::from),
+        LocalShortcut::Root => Some(PathBuf::from(std::path::MAIN_SEPARATOR.to_string())),
+    };
+    let Some(path) = path else { return true };
+    app.store_current_selection_memory();
+    app.push_history(app.active_panel);
+    load_fs_directory_async(app, path, app.active_panel, None);
+    true
+}
+
+enum SelectionPosition {
+    Top,
+    Center,
+    Bottom,
+}
+
+fn position_selection(
+    app: &mut app_state::AppState,
+    window_rows: usize,
+    position: SelectionPosition,
+) -> bool {
+    let browser = app.get_active_panel_mut().browser_mut();
+    let selected = browser.selected_index;
+    browser.top_index = match position {
+        SelectionPosition::Top => selected,
+        SelectionPosition::Center => selected.saturating_sub(window_rows / 2),
+        SelectionPosition::Bottom => selected.saturating_add(1).saturating_sub(window_rows),
+    };
+    true
+}
+
+enum PreviewScrollTarget {
+    Top,
+    Bottom,
+}
+
+fn scroll_active_preview_lines(app: &mut app_state::AppState, lines: f32) -> bool {
+    let Some(amount) = active_preview_metrics(app).map(|(line, _, _)| line * lines) else {
+        return false;
+    };
+    scroll_active_preview_by(app, amount)
+}
+
+fn scroll_active_preview_pages(app: &mut app_state::AppState, pages: f32) -> bool {
+    let Some(amount) = active_preview_metrics(app).map(|(_, page, _)| page * pages) else {
+        return false;
+    };
+    scroll_active_preview_by(app, amount)
+}
+
+fn set_active_preview_scroll(app: &mut app_state::AppState, target: PreviewScrollTarget) -> bool {
+    let Some((_, _, max_scroll)) = active_preview_metrics(app) else {
+        return false;
+    };
+    if let app_state::PanelMode::Preview(ref mut preview) = app.panel_mut(app.active_panel).mode {
+        preview.scroll = match target {
+            PreviewScrollTarget::Top => 0.0,
+            PreviewScrollTarget::Bottom => max_scroll,
+        };
+        return true;
+    }
+    false
+}
+
+fn scroll_active_preview_by(app: &mut app_state::AppState, amount: f32) -> bool {
+    let Some((_, _, max_scroll)) = active_preview_metrics(app) else {
+        return false;
+    };
+    if let app_state::PanelMode::Preview(ref mut preview) = app.panel_mut(app.active_panel).mode {
+        preview.scroll = (preview.scroll + amount).clamp(0.0, max_scroll);
+        return true;
+    }
+    false
+}
+
+fn active_preview_metrics(app: &app_state::AppState) -> Option<(f32, f32, f32)> {
+    if let app_state::PanelMode::Preview(ref preview) = app.panel(app.active_panel).mode {
+        let line = preview.line_height.max(16.0);
+        let page = preview.page_height.max(200.0);
+        let max_scroll = preview.max_scroll;
+        Some((line, page, max_scroll))
+    } else {
+        None
+    }
+}
+
+fn activate_selected(app: &mut app_state::AppState) {
+    if app.search_ui == app_state::SearchUiState::Open {
+        if !matches!(
+            app.get_active_panel().browser().browser_mode,
+            core::BrowserMode::Search { .. }
+        ) {
+            start_search(app);
+            app.search_ui = app_state::SearchUiState::Closed;
+            return;
+        }
+    }
+
+    if matches!(
+        app.get_active_panel().browser().browser_mode,
+        core::BrowserMode::Search { .. }
+    ) {
+        app.push_history(app.active_panel);
+        let panel = app.get_active_panel();
+        let browser = panel.browser();
+        let entry = browser.entries.get(browser.selected_index).cloned();
+        if let Some(entry) = entry {
+            match entry.location {
+                core::EntryLocation::Fs(path) => {
+                    if entry.is_dir {
+                        load_fs_directory_async(app, path, app.active_panel, None);
+                    } else if let Some(parent) = path.parent() {
+                        let name = path
+                            .file_name()
+                            .and_then(|s| s.to_str())
+                            .map(|s| s.to_string());
+                        load_fs_directory_async(app, parent.to_path_buf(), app.active_panel, name);
+                    }
+                }
+                core::EntryLocation::Remote { host, path } => {
+                    if entry.is_dir {
+                        crate::load_sftp_directory_async(app, &host, &path, app.active_panel, None);
+                    } else {
+                        let slash = path.rfind('/').unwrap_or(0);
+                        let parent = if slash == 0 { "/" } else { &path[..slash] };
+                        let name = path[slash + 1..].to_string();
+                        crate::load_sftp_directory_async(
+                            app,
+                            &host,
+                            parent,
+                            app.active_panel,
+                            Some(name),
+                        );
+                    }
+                }
+                core::EntryLocation::Container { .. } => {}
+            }
+        }
+        app.search_ui = app_state::SearchUiState::Closed;
+    } else if app.theme_picker_open {
+        app.apply_selected_theme();
+    } else {
+        open_selected(app);
     }
 }
 

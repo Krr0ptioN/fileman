@@ -486,6 +486,7 @@ fn init_headless_app(root: Option<PathBuf>) -> anyhow::Result<app_state::AppStat
         update_rx: None,
         gpu_info: String::from("Test"),
         quick_jump: None,
+        vim_command: Default::default(),
         error_message: None,
         elevation_prompt: None,
         sftp_sessions: std::collections::HashMap::new(),

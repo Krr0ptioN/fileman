@@ -45,6 +45,26 @@ pub fn draw_help(
             ("F10", "Theme picker"),
             ("F1 / Ctrl+H", "Help"),
         ];
+        let vim_shortcuts = [
+            ("j / k", "Move down / up"),
+            ("h / l", "Parent / open"),
+            ("gg / G", "Top / bottom"),
+            ("5j, 12G", "Counts for movement and jumps"),
+            ("H / L", "Back / forward"),
+            ("J / K", "Half-page down / up"),
+            ("/ / ?", "Search by name / content"),
+            ("v / uv", "Mark / unmark all"),
+            ("yy, dd, pp", "Copy, move, confirm copy or move"),
+            ("dD / x", "Delete"),
+            ("cw", "Rename"),
+            ("nf / nd", "New file / new directory"),
+            ("i / e / r", "Preview / edit / open externally"),
+            ("gt / gT", "Next / previous tab"),
+            ("gn / gc", "New / close tab"),
+            ("gh / gr", "Home / filesystem root"),
+            ("zt / zz / zb", "Place selection top / center / bottom"),
+            ("q", "Close preview or picker"),
+        ];
         egui::Frame::NONE
             .fill(color32(colors.preview_bg))
             .stroke(egui::Stroke::new(
@@ -85,6 +105,20 @@ pub fn draw_help(
                 ui.colored_label(color32(colors.preview_text), "Shortcuts");
                 ui.add_space(6.0);
                 for (keys, desc) in shortcuts {
+                    ui.horizontal(|ui| {
+                        ui.add_space(10.0);
+                        ui.colored_label(
+                            color32(colors.row_fg_selected),
+                            egui::RichText::new(keys).monospace().strong(),
+                        );
+                        ui.colored_label(color32(colors.row_fg_inactive), desc);
+                    });
+                }
+
+                ui.add_space(10.0);
+                ui.colored_label(color32(colors.preview_text), "Vim / Ranger Keys");
+                ui.add_space(6.0);
+                for (keys, desc) in vim_shortcuts {
                     ui.horizontal(|ui| {
                         ui.add_space(10.0);
                         ui.colored_label(

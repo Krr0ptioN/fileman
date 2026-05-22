@@ -1,0 +1,36 @@
+(
+  root: "tests/data",
+  left: Some("tests/data/basic"),
+  right: Some("tests/data/edit_test"),
+  keys: [
+    (key: "Wait"),
+    (key: "G"),
+    (key: "c"),
+    (key: "w"),
+    (key: "replace:vim_renamed.txt"),
+    (key: "Enter"),
+    (key: "Wait"),
+    (key: "y"),
+    (key: "y"),
+    (key: "p"),
+    (key: "p"),
+    (key: "Wait"),
+  ],
+  asserts: (
+    fs: Some((
+      mode: Contains,
+      entries: [
+        (path: "basic", kind: Dir),
+        (path: "edit_test", kind: Dir),
+        (path: "basic/binary.bin", kind: File),
+        (path: "basic/vim_renamed.txt", kind: File),
+        (path: "edit_test/vim_renamed.txt", kind: File),
+      ],
+    )),
+    left_panel: Some((
+      selected: Some("vim_renamed.txt"),
+      browser_mode: Some("Fs"),
+      panel_mode: Some("Browser"),
+    )),
+  ),
+)

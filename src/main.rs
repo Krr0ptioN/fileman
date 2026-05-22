@@ -3581,6 +3581,7 @@ impl winit::application::ApplicationHandler<UserEvent> for App {
                 format!("{} ({})", dev.device_name, backend)
             },
             quick_jump: None,
+            vim_command: Default::default(),
             error_message: None,
             elevation_prompt: None,
             sftp_sessions: HashMap::new(),

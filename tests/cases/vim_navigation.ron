@@ -1,0 +1,25 @@
+(
+  root: "tests/data/basic",
+  keys: [
+    (key: "Wait"),
+    (key: "j"),
+    (key: "2"),
+    (key: "j"),
+    (key: "k"),
+    (key: "g"),
+    (key: "g"),
+    (key: "G"),
+    (key: "2"),
+    (key: "g"),
+    (key: "g"),
+  ],
+  asserts: (
+    left_panel: Some((
+      mode: Contains,
+      entries: ["..", "binary.bin", "source.txt"],
+      selected: Some("binary.bin"),
+      browser_mode: Some("Fs"),
+      panel_mode: Some("Browser"),
+    )),
+  ),
+)

@@ -69,6 +69,10 @@ pub fn draw_command_bar(ui: &mut egui::Ui, app: &app_state::AppState, colors: &t
                             draw_key_cap(ui, k!("F7", "^D"), f7, colors);
                         }
                         draw_key_cap(ui, k!("F8", "^X"), f8, colors);
+                        if let Some(command) = app.vim_command.display() {
+                            ui.add_space(8.0);
+                            draw_key_cap(ui, "vim", &command, colors);
+                        }
                     });
                 });
         });

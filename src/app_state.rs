@@ -190,6 +190,28 @@ pub struct QuickJumpState {
     pub focus_input: bool,
 }
 
+#[derive(Default)]
+pub struct VimCommandState {
+    pub pending: String,
+    pub count: Option<usize>,
+}
+
+impl VimCommandState {
+    pub fn clear(&mut self) {
+        self.pending.clear();
+        self.count = None;
+    }
+
+    pub fn display(&self) -> Option<String> {
+        let mut text = String::new();
+        if let Some(count) = self.count {
+            text.push_str(&count.to_string());
+        }
+        text.push_str(&self.pending);
+        if text.is_empty() { None } else { Some(text) }
+    }
+}
+
 pub struct ArchiveFullIndex {
     pub entries: Vec<(String, bool, Option<u64>)>,
     pub root: Option<String>,
@@ -380,6 +402,7 @@ pub struct AppState {
     pub update_rx: Option<mpsc::Receiver<UpdateStatus>>,
     pub gpu_info: String,
     pub quick_jump: Option<QuickJumpState>,
+    pub vim_command: VimCommandState,
     pub error_message: Option<String>,
     /// Permission error with retryable task — shown as elevation prompt.
     pub elevation_prompt: Option<(String, crate::core::IOTask)>,
