@@ -1,7 +1,7 @@
 use gpui::{IntoElement, Styled, px};
 use gpui_component::{Icon, IconName};
 
-use crate::gpui_shell::features::file_browser::{
+use crate::features::file_browser::{
     rows::{FileFormat, RowKind},
     tokens,
 };

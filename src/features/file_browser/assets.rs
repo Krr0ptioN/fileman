@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use gpui::{AssetSource, SharedString};
 
-pub(crate) struct FilemanAssets;
+pub struct FilemanAssets;
 
 impl AssetSource for FilemanAssets {
     fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {

@@ -1,7 +1,7 @@
 use gpui::{IntoElement, ParentElement, Styled, div, px};
 use gpui_component::{h_flex, v_flex};
 
-use crate::gpui_shell::features::file_browser::{state::BrowserPanel, tokens};
+use crate::features::file_browser::{state::BrowserPanel, tokens};
 
 pub(crate) fn render_panel_header(panel: &BrowserPanel, active: bool) -> impl IntoElement {
     v_flex()

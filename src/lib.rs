@@ -25,7 +25,6 @@ pub mod archive;
 pub mod core;
 pub mod elevate;
 pub mod features;
-#[cfg(feature = "gpui-shell")]
 pub mod gpui_shell;
 pub mod image_decode;
 pub mod sftp;

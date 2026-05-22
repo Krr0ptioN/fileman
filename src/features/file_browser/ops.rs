@@ -4,7 +4,7 @@ use crate::core;
 
 use super::state::{ClipboardKind, FileTarget};
 
-pub(crate) enum FileOperation {
+pub enum FileOperation {
     Paste {
         kind: ClipboardKind,
         targets: Vec<FileTarget>,
@@ -20,7 +20,7 @@ pub(crate) enum FileOperation {
 }
 
 impl FileOperation {
-    pub(crate) fn pending_status(&self) -> String {
+    pub fn pending_status(&self) -> String {
         match self {
             Self::Paste { kind, targets, .. } => {
                 let op = match kind {
@@ -36,7 +36,7 @@ impl FileOperation {
         }
     }
 
-    pub(crate) fn run(self) -> anyhow::Result<String> {
+    pub fn run(self) -> anyhow::Result<String> {
         match self {
             Self::Paste {
                 kind,
@@ -101,10 +101,6 @@ fn move_target(target: &FileTarget, dst_dir: &Path) -> anyhow::Result<()> {
 }
 
 fn delete_target(target: &FileTarget) -> anyhow::Result<()> {
-    let result = if target.is_dir {
-        fs::remove_dir_all(&target.path)
-    } else {
-        fs::remove_file(&target.path)
-    };
-    result.map_err(|error| anyhow::anyhow!("delete {}: {error}", target.path.display()))
+    core::delete_path(&target.path, target.is_dir)
+        .map_err(|error| anyhow::anyhow!("delete {}: {error}", target.path.display()))
 }

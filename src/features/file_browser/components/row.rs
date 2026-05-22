@@ -5,7 +5,7 @@ use super::{
     badges::{executable_badge, intent_badge},
     icons::row_icon,
 };
-use crate::gpui_shell::features::file_browser::{
+use crate::features::file_browser::{
     rows::{FileRow, RowIntent, kind_label},
     tokens,
 };

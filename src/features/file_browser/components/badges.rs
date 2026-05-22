@@ -1,7 +1,7 @@
 use gpui::{IntoElement, ParentElement, Styled, div, px};
 use gpui_component::{Icon, IconName, h_flex};
 
-use crate::gpui_shell::features::file_browser::{rows::RowIntent, tokens};
+use crate::features::file_browser::{rows::RowIntent, tokens};
 
 pub(crate) fn executable_badge(is_executable: bool) -> impl IntoElement {
     h_flex()

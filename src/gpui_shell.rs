@@ -5,32 +5,31 @@ use std::{
 
 use gpui::{
     App, AppContext, Application, Bounds, Context, FocusHandle, InteractiveElement, IntoElement,
-    KeyDownEvent, ParentElement, Render, Styled, Window, WindowBounds, WindowOptions, div, px,
-    size,
+    KeyDownEvent, ParentElement, Render, Styled, Window, WindowBounds, WindowOptions, px, size,
 };
 use gpui_component::{Root, h_flex, v_flex};
 
-mod features;
-
-use features::file_browser::tokens;
-use features::file_browser::{
-    BrowserPanel, ClipboardKind, ClipboardOp, FileOperation, FileRow, FileTarget, FilemanAssets,
-    HeldNavigation, InputMode, PaneMode, PanelSide, PendingConfirm, ToggleResult, navigation_key,
-    render_panel, toggle_targets,
-};
-
 use crate::core;
+use crate::features::file_browser::tokens;
+use crate::features::file_browser::{
+    BrowserPanel, ClipboardKind, ClipboardOp, FileOperation, FileRow, FileTarget, FilemanAssets,
+    InputMode, PaneMode, PanelSide, PendingConfirm, delete_status, render_command_bar,
+    render_panel, render_title_bar, selection_status, toggle_targets,
+};
+use crate::features::keybind::{
+    BrowserCommand, HeldNavigation, command_char_from_key, navigation_input,
+};
 use crate::features::vim_keys::{VimCommandState, VimCommandStep};
 
 pub fn run(start_path: Option<PathBuf>) {
     Application::new()
         .with_assets(FilemanAssets)
-        .run(move |cx: &mut App| {
-            gpui_component::init(cx);
+        .run(move |app: &mut App| {
+            gpui_component::init(app);
             let start_path = start_path.clone();
 
-            let bounds = Bounds::centered(None, size(px(1180.0), px(720.0)), cx);
-            cx.open_window(
+            let bounds = Bounds::centered(None, size(px(1180.0), px(720.0)), app);
+            app.open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     app_id: Some("com.fileman.gpui".to_string()),
@@ -46,15 +45,15 @@ pub fn run(start_path: Option<PathBuf>) {
             )
             .expect("failed to open GPUI window");
 
-            cx.activate(true);
+            app.activate(true);
         });
 }
 
-struct FilemanShell {
+pub struct FilemanShell {
     left: BrowserPanel,
     right: BrowserPanel,
     active: PanelSide,
-    focus_handle: FocusHandle,
+    pub(crate) focus_handle: FocusHandle,
     vim_command: VimCommandState,
     clipboard: Option<ClipboardOp>,
     input_mode: InputMode,
@@ -66,7 +65,11 @@ struct FilemanShell {
 }
 
 impl FilemanShell {
-    fn new(focus_handle: FocusHandle, start_path: Option<PathBuf>, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(
+        focus_handle: FocusHandle,
+        start_path: Option<PathBuf>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let start_path = start_path
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| PathBuf::from("."));
@@ -112,54 +115,48 @@ impl FilemanShell {
     }
 
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if self.handle_input_mode_key(event, cx) || self.handle_confirm_key(event, cx) {
-            self.held_navigation.reset();
-            window.prevent_default();
-            cx.stop_propagation();
-            cx.notify();
-            return;
-        }
-
-        if self.handle_control_key(event) {
-            self.held_navigation.reset();
-            window.prevent_default();
-            cx.stop_propagation();
-            cx.notify();
-            return;
-        }
-
-        if self.handle_navigation_key(event) {
-            window.prevent_default();
-            cx.stop_propagation();
-            cx.notify();
-            return;
-        }
-
-        self.held_navigation.reset();
-        let Some(ch) = vim_char_from_key(event) else {
-            return;
-        };
-
-        if self.apply_vim_char(ch, cx) {
-            window.prevent_default();
-            cx.stop_propagation();
-            cx.notify();
+        if self.handle_key_command(event, cx) {
+            Self::consume_key_event(window, cx);
         }
     }
 
-    fn handle_navigation_key(&mut self, event: &KeyDownEvent) -> bool {
-        let Some(key) = navigation_key(event) else {
+    fn handle_key_command(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        if self.handle_modal_key(event, cx) || self.handle_control_key(event) {
+            self.held_navigation.reset();
+            return true;
+        }
+
+        if self.handle_navigation_key(event) {
+            return true;
+        }
+
+        self.handle_vim_key(event, cx)
+    }
+
+    fn handle_modal_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        self.handle_input_mode_key(event, cx) || self.handle_confirm_key(event, cx)
+    }
+
+    fn handle_vim_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        self.held_navigation.reset();
+        let Some(ch) = command_char_from_key(event) else {
             return false;
         };
 
-        let rows = if event.is_held {
-            self.held_navigation.advance(key)
-        } else if matches!(event.keystroke.key.as_str(), "up" | "down") {
-            self.held_navigation.reset();
-            1
-        } else {
+        self.apply_vim_char(ch, cx)
+    }
+
+    fn consume_key_event(window: &mut Window, cx: &mut Context<Self>) {
+        window.prevent_default();
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn handle_navigation_key(&mut self, event: &KeyDownEvent) -> bool {
+        let Some(input) = navigation_input(event) else {
             return false;
         };
+        let (key, rows) = self.held_navigation.rows_for(input);
 
         self.active_panel_mut().select_relative(key.delta(rows));
         self.status = format!(
@@ -204,7 +201,7 @@ impl FilemanShell {
             _ => {}
         }
 
-        if let Some(ch) = vim_char_from_key(event) {
+        if let Some(ch) = command_char_from_key(event) {
             input.push(ch);
             self.status = format!("rename: {input}");
         }
@@ -306,65 +303,53 @@ impl FilemanShell {
         explicit_count: bool,
         cx: &mut Context<Self>,
     ) -> bool {
-        if sequence == "h" {
-            return self.open_parent(cx);
-        }
-        if sequence == "w" {
-            self.switch_active_panel();
-            return true;
-        }
+        let Some(command) = BrowserCommand::from_vim_sequence(sequence, count, explicit_count)
+        else {
+            return false;
+        };
 
-        let active = self.active_panel_mut();
-        let row_count = active.rows.len();
-        if row_count == 0 {
+        if command.requires_rows() && self.active_panel().rows.is_empty() {
             self.status = "empty".to_string();
             return true;
         }
 
-        match sequence {
-            "j" => active.select_relative(count as isize),
-            "k" => active.select_relative(-(count as isize)),
-            "J" => active.select_relative((count * 8) as isize),
-            "K" => active.select_relative(-((count * 8) as isize)),
-            "gg" => active.select_line(if explicit_count {
-                count.saturating_sub(1)
-            } else {
-                0
-            }),
-            "G" => {
-                if explicit_count {
-                    active.select_line(count.saturating_sub(1));
-                } else {
-                    active.select_last();
-                }
+        match command {
+            BrowserCommand::Move(delta) | BrowserCommand::MovePage(delta) => {
+                self.active_panel_mut().select_relative(delta)
             }
-            "0" => active.select_line(0),
-            "l" => return self.open_selected(cx),
-            "v" => {
+            BrowserCommand::First => self.active_panel_mut().select_line(0),
+            BrowserCommand::Last => self.active_panel_mut().select_last(),
+            BrowserCommand::Line(line) => self.active_panel_mut().select_line(line),
+            BrowserCommand::OpenParent => return self.open_parent(cx),
+            BrowserCommand::OpenSelected => return self.open_selected(cx),
+            BrowserCommand::ToggleMark(count) => {
                 let marked = self.toggle_marked(count);
                 self.status = format!("{marked} marked");
             }
-            "V" => {
+            BrowserCommand::ToggleAllMarks => {
                 self.status = self.toggle_all_marks();
             }
-            "uv" | "uV" => {
+            BrowserCommand::ClearMarks => {
                 self.active_panel_mut().marked.clear();
                 self.status = "marks cleared".to_string();
             }
-            "yy" => return self.prepare_clipboard(ClipboardKind::Copy),
-            "dd" => return self.prepare_clipboard(ClipboardKind::Move),
-            "pp" => return self.paste_clipboard(cx),
-            "dD" | "x" => return self.prepare_delete(),
-            "cw" | "C" => return self.start_rename(),
-            "s" => {
+            BrowserCommand::Copy => return self.prepare_clipboard(ClipboardKind::Copy),
+            BrowserCommand::MoveSelection => return self.prepare_clipboard(ClipboardKind::Move),
+            BrowserCommand::Paste => return self.paste_clipboard(cx),
+            BrowserCommand::Delete => return self.prepare_delete(),
+            BrowserCommand::Rename => return self.start_rename(),
+            BrowserCommand::TogglePaneMode => {
                 self.pane_mode = self.pane_mode.toggle();
                 self.status = format!("{} pane mode", self.pane_mode.label());
             }
-            "r" | "R" => {
+            BrowserCommand::SwitchPanel => {
+                self.switch_active_panel();
+                return true;
+            }
+            BrowserCommand::Reload => {
                 let path = self.active_panel().path.clone();
                 self.load_panel(self.active, path, None, cx);
             }
-            _ => return false,
         }
 
         if !matches!(sequence, "h" | "l") {
@@ -736,25 +721,6 @@ impl FilemanShell {
     }
 }
 
-fn selection_status(label: &str, result: ToggleResult) -> String {
-    match result {
-        ToggleResult::Empty => "nothing selected".to_string(),
-        ToggleResult::Added(count) => format!("{label} {count} item(s)"),
-        ToggleResult::Removed(count) => format!("{label} {count} item(s)"),
-        ToggleResult::Cleared => format!("{label} cleared"),
-    }
-}
-
-fn delete_status(result: ToggleResult) -> String {
-    match result {
-        ToggleResult::Empty => "nothing selected".to_string(),
-        ToggleResult::Added(count) | ToggleResult::Removed(count) => {
-            format!("delete {count} item(s)? y/enter to confirm")
-        }
-        ToggleResult::Cleared => "delete cleared".to_string(),
-    }
-}
-
 impl Render for FilemanShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let viewport = window.viewport_size();
@@ -842,116 +808,4 @@ impl Render for FilemanShell {
                 self.status.as_str(),
             ))
     }
-}
-
-fn render_title_bar() -> impl IntoElement {
-    h_flex()
-        .h(px(42.0))
-        .px_3()
-        .items_center()
-        .justify_between()
-        .bg(tokens::BG_PANEL_RAISED)
-        .border_b_1()
-        .border_color(tokens::BORDER_SUBTLE)
-        .child(
-            h_flex()
-                .items_center()
-                .gap_2()
-                .child(div().size(px(10.0)).rounded_full().bg(tokens::ACCENT))
-                .child(
-                    div()
-                        .text_color(tokens::TEXT_PRIMARY)
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .child("FileMan"),
-                ),
-        )
-        .child(
-            div()
-                .text_color(tokens::TEXT_SECONDARY)
-                .text_size(px(12.0))
-                .child("GPUI shell"),
-        )
-}
-
-fn render_command_bar(mode: String, status: &str) -> impl IntoElement {
-    h_flex()
-        .h(px(34.0))
-        .px_3()
-        .items_center()
-        .justify_between()
-        .bg(tokens::BG_PANEL_RAISED)
-        .border_t_1()
-        .border_color(tokens::BORDER_SUBTLE)
-        .child(
-            h_flex()
-                .items_center()
-                .gap_2()
-                .child(command_hint("j/k", "move"))
-                .child(command_hint("v/V", "mark"))
-                .child(command_hint("h/l", "parent/open"))
-                .child(command_hint("yy/dd/pp", "copy/move/paste"))
-                .child(command_hint("cw/x", "rename/delete"))
-                .child(command_hint("s/w", "layout/pane")),
-        )
-        .child(
-            h_flex()
-                .items_center()
-                .gap_2()
-                .child(
-                    div()
-                        .text_size(px(12.0))
-                        .text_color(tokens::ACCENT)
-                        .child(mode),
-                )
-                .child(
-                    div()
-                        .text_size(px(12.0))
-                        .text_color(tokens::TEXT_MUTED)
-                        .child(status.to_string()),
-                ),
-        )
-}
-
-fn command_hint(key: &'static str, label: &'static str) -> impl IntoElement {
-    h_flex()
-        .items_center()
-        .gap_1()
-        .child(
-            div()
-                .px_1()
-                .rounded(px(3.0))
-                .border_1()
-                .border_color(tokens::BORDER_SUBTLE)
-                .text_color(tokens::ACCENT)
-                .text_size(px(11.0))
-                .child(key),
-        )
-        .child(
-            div()
-                .text_size(px(12.0))
-                .text_color(tokens::TEXT_SECONDARY)
-                .child(label),
-        )
-}
-
-fn vim_char_from_key(event: &KeyDownEvent) -> Option<char> {
-    if event.is_held {
-        return None;
-    }
-
-    let modifiers = event.keystroke.modifiers;
-    if modifiers.control || modifiers.alt || modifiers.platform || modifiers.function {
-        return None;
-    }
-
-    let key = event
-        .keystroke
-        .key_char
-        .as_deref()
-        .unwrap_or(event.keystroke.key.as_str());
-    if key.chars().count() != 1 {
-        return None;
-    }
-
-    key.chars().next().filter(|ch| !ch.is_control())
 }

@@ -4,13 +4,13 @@ use gpui::{IntoElement, ParentElement, Styled, div, px, uniform_list};
 use gpui_component::v_flex;
 
 use super::{header::render_panel_header, row::render_row};
-use crate::gpui_shell::features::file_browser::{
+use crate::features::file_browser::{
     rows::row_intent,
     state::{BrowserPanel, ClipboardKind, ClipboardOp, PanelSide, PendingConfirm},
     tokens,
 };
 
-pub(crate) fn render_panel(
+pub fn render_panel(
     panel: &BrowserPanel,
     active: bool,
     clipboard: Option<&ClipboardOp>,
