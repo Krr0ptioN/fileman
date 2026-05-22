@@ -1,8 +1,11 @@
 use gpui::{
-    App, AppContext, Application, Bounds, Context, InteractiveElement, IntoElement, ParentElement,
-    Render, Styled, Window, WindowBounds, WindowOptions, div, px, size, uniform_list,
+    App, AppContext, Application, Bounds, Context, FocusHandle, InteractiveElement, IntoElement,
+    KeyDownEvent, ParentElement, Render, Styled, Window, WindowBounds, WindowOptions, div, px,
+    size, uniform_list,
 };
 use gpui_component::{Root, h_flex, v_flex};
+
+use crate::features::vim_keys::{VimCommandState, VimCommandStep};
 
 pub fn run() {
     Application::new().run(|cx: &mut App| {
@@ -18,7 +21,8 @@ pub fn run() {
             },
             |window, cx| {
                 window.set_window_title("FileMan GPUI");
-                let shell = cx.new(|_| FilemanShell::demo());
+                let shell = cx.new(|cx| FilemanShell::demo(cx.focus_handle()));
+                shell.read(cx).focus_handle.focus(window);
                 cx.new(|cx| Root::new(shell, window, cx))
             },
         )
@@ -32,10 +36,13 @@ struct FilemanShell {
     left: BrowserPanel,
     right: BrowserPanel,
     active: PanelSide,
+    focus_handle: FocusHandle,
+    vim_command: VimCommandState,
+    status: String,
 }
 
 impl FilemanShell {
-    fn demo() -> Self {
+    fn demo(focus_handle: FocusHandle) -> Self {
         Self {
             left: BrowserPanel {
                 side: PanelSide::Left,
@@ -56,13 +63,111 @@ impl FilemanShell {
                 ],
             },
             active: PanelSide::Left,
+            focus_handle,
+            vim_command: VimCommandState::default(),
+            status: "normal".to_string(),
+        }
+    }
+
+    fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(ch) = vim_char_from_key(event) else {
+            return;
+        };
+
+        if self.apply_vim_char(ch) {
+            window.prevent_default();
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }
+
+    fn apply_vim_char(&mut self, ch: char) -> bool {
+        match self.vim_command.push(ch) {
+            VimCommandStep::Ignored => false,
+            VimCommandStep::Pending => {
+                self.status = self
+                    .vim_command
+                    .display()
+                    .unwrap_or_else(|| "normal".to_string());
+                true
+            }
+            VimCommandStep::Execute {
+                sequence,
+                count,
+                explicit_count,
+                had_pending,
+            } => {
+                let handled = self.execute_vim_sequence(sequence.as_str(), count, explicit_count);
+                if !handled && had_pending {
+                    return self.apply_vim_char(ch);
+                }
+                handled
+            }
+        }
+    }
+
+    fn execute_vim_sequence(&mut self, sequence: &str, count: usize, explicit_count: bool) -> bool {
+        let active = self.active_panel_mut();
+        let row_count = active.rows.len();
+        if row_count == 0 {
+            self.status = "empty".to_string();
+            return true;
+        }
+
+        match sequence {
+            "j" => active.select_relative(count as isize),
+            "k" => active.select_relative(-(count as isize)),
+            "J" => active.select_relative((count * 8) as isize),
+            "K" => active.select_relative(-((count * 8) as isize)),
+            "gg" => active.select_line(if explicit_count {
+                count.saturating_sub(1)
+            } else {
+                0
+            }),
+            "G" => {
+                if explicit_count {
+                    active.select_line(count.saturating_sub(1));
+                } else {
+                    active.select_last();
+                }
+            }
+            "0" => active.select_line(0),
+            "h" => self.status = "parent".to_string(),
+            "l" => {
+                let name = self.active_panel().selected_name();
+                self.status = format!("open {name}");
+            }
+            _ => return false,
+        }
+
+        if !matches!(sequence, "h" | "l") {
+            let selected = self.active_panel().selected_name();
+            self.status = format!("{sequence} -> {selected}");
+        }
+        true
+    }
+
+    fn active_panel(&self) -> &BrowserPanel {
+        match self.active {
+            PanelSide::Left => &self.left,
+            PanelSide::Right => &self.right,
+        }
+    }
+
+    fn active_panel_mut(&mut self) -> &mut BrowserPanel {
+        match self.active {
+            PanelSide::Left => &mut self.left,
+            PanelSide::Right => &mut self.right,
         }
     }
 }
 
 impl Render for FilemanShell {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
+            .id("fileman-shell")
+            .track_focus(&self.focus_handle)
+            .on_key_down(cx.listener(Self::on_key_down))
             .size_full()
             .bg(tokens::BG_CANVAS)
             .text_color(tokens::TEXT_PRIMARY)
@@ -76,7 +181,10 @@ impl Render for FilemanShell {
                     .child(self.left.render(self.active == PanelSide::Left))
                     .child(self.right.render(self.active == PanelSide::Right)),
             )
-            .child(render_command_bar())
+            .child(render_command_bar(
+                self.vim_command.display(),
+                self.status.as_str(),
+            ))
     }
 }
 
@@ -123,6 +231,42 @@ impl BrowserPanel {
                     .h_full(),
                 ),
             )
+    }
+
+    fn select_relative(&mut self, delta: isize) {
+        if self.rows.is_empty() {
+            self.selected_index = 0;
+            return;
+        }
+
+        self.selected_index = if delta.is_negative() {
+            self.selected_index.saturating_sub(delta.unsigned_abs())
+        } else {
+            self.selected_index
+                .saturating_add(delta as usize)
+                .min(self.rows.len() - 1)
+        };
+    }
+
+    fn select_line(&mut self, index: usize) {
+        if self.rows.is_empty() {
+            self.selected_index = 0;
+        } else {
+            self.selected_index = index.min(self.rows.len() - 1);
+        }
+    }
+
+    fn select_last(&mut self) {
+        if !self.rows.is_empty() {
+            self.selected_index = self.rows.len() - 1;
+        }
+    }
+
+    fn selected_name(&self) -> &'static str {
+        self.rows
+            .get(self.selected_index)
+            .map(|row| row.name)
+            .unwrap_or("<none>")
     }
 }
 
@@ -273,7 +417,9 @@ fn render_row(ix: usize, row: FileRow, selected: bool) -> impl IntoElement {
         )
 }
 
-fn render_command_bar() -> impl IntoElement {
+fn render_command_bar(command: Option<String>, status: &str) -> impl IntoElement {
+    let mode = command.unwrap_or_else(|| "normal".to_string());
+
     h_flex()
         .h(px(34.0))
         .px_3()
@@ -292,10 +438,21 @@ fn render_command_bar() -> impl IntoElement {
                 .child(command_hint("cw", "rename")),
         )
         .child(
-            div()
-                .text_size(px(12.0))
-                .text_color(tokens::TEXT_MUTED)
-                .child("idle"),
+            h_flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .text_size(px(12.0))
+                        .text_color(tokens::ACCENT)
+                        .child(mode),
+                )
+                .child(
+                    div()
+                        .text_size(px(12.0))
+                        .text_color(tokens::TEXT_MUTED)
+                        .child(status.to_string()),
+                ),
         )
 }
 
@@ -332,6 +489,26 @@ fn demo_rows() -> Vec<FileRow> {
         FileRow::file("README.md", "4.2 KB"),
         FileRow::file("CHANGELOG.md", "2.7 KB"),
     ]
+}
+
+fn vim_char_from_key(event: &KeyDownEvent) -> Option<char> {
+    if event.is_held {
+        return None;
+    }
+
+    let modifiers = event.keystroke.modifiers;
+    if modifiers.control || modifiers.alt || modifiers.platform || modifiers.function {
+        return None;
+    }
+
+    event
+        .keystroke
+        .key_char
+        .as_deref()
+        .unwrap_or(event.keystroke.key.as_str())
+        .chars()
+        .next()
+        .filter(|ch| !ch.is_control())
 }
 
 mod tokens {
