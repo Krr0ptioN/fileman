@@ -21,15 +21,14 @@
     clippy::pattern_type_mismatch,
 )]
 
-pub mod app_state;
 pub mod archive;
 pub mod core;
 pub mod elevate;
 pub mod features;
 #[cfg(feature = "gpui-shell")]
 pub mod gpui_shell;
+pub mod image_decode;
 pub mod sftp;
 pub mod snapshot;
 pub mod syntax;
 pub mod theme;
-pub mod workers;
