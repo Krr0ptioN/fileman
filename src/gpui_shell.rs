@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use gpui::prelude::FluentBuilder;
 use gpui::{
     App, AppContext, Application, Bounds, Context, FocusHandle, InteractiveElement, IntoElement,
     KeyDownEvent, ParentElement, Render, Styled, Window, WindowBounds, WindowOptions, px, size,
@@ -14,10 +15,11 @@ use crate::features::file_browser::tokens;
 use crate::features::file_browser::{
     BrowserPanel, ClipboardKind, ClipboardOp, FileOperation, FileRow, FileTarget, FilemanAssets,
     InputMode, PaneMode, PanelSide, PendingConfirm, delete_status, render_command_bar,
-    render_panel, render_title_bar, selection_status, toggle_targets,
+    render_help_popup, render_panel, render_title_bar, selection_status, toggle_targets,
 };
 use crate::features::keybind::{
-    BrowserCommand, HeldNavigation, command_char_from_key, navigation_input,
+    BrowserCommand, HeldNavigation, LeaderAction, command_char_from_key, leader_action,
+    navigation_input,
 };
 use crate::features::vim_keys::{VimCommandState, VimCommandStep};
 
@@ -60,6 +62,7 @@ pub struct FilemanShell {
     pending_confirm: Option<PendingConfirm>,
     pane_mode: PaneMode,
     held_navigation: HeldNavigation,
+    help_popup_open: bool,
     operation_in_flight: bool,
     status: String,
 }
@@ -106,6 +109,7 @@ impl FilemanShell {
             pending_confirm: None,
             pane_mode: PaneMode::Dual,
             held_navigation: HeldNavigation::default(),
+            help_popup_open: false,
             operation_in_flight: false,
             status: "normal".to_string(),
         };
@@ -126,6 +130,11 @@ impl FilemanShell {
             return true;
         }
 
+        if self.handle_leader_key(event) {
+            self.held_navigation.reset();
+            return true;
+        }
+
         if self.handle_navigation_key(event) {
             return true;
         }
@@ -135,6 +144,25 @@ impl FilemanShell {
 
     fn handle_modal_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
         self.handle_input_mode_key(event, cx) || self.handle_confirm_key(event, cx)
+    }
+
+    fn handle_leader_key(&mut self, event: &KeyDownEvent) -> bool {
+        let Some(action) = leader_action(event, self.help_popup_open) else {
+            return self.help_popup_open;
+        };
+
+        match action {
+            LeaderAction::Open => {
+                self.vim_command.clear();
+                self.help_popup_open = true;
+                self.status = "key map".to_string();
+            }
+            LeaderAction::Close => {
+                self.help_popup_open = false;
+                self.status = "normal".to_string();
+            }
+        }
+        true
     }
 
     fn handle_vim_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
@@ -693,6 +721,7 @@ impl FilemanShell {
         match (&self.input_mode, &self.pending_confirm) {
             (InputMode::Rename { .. }, _) => "rename".to_string(),
             (_, Some(_)) => "confirm".to_string(),
+            _ if self.help_popup_open => "keys".to_string(),
             _ => self
                 .vim_command
                 .display()
@@ -797,6 +826,7 @@ impl Render for FilemanShell {
             .id("fileman-shell")
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::on_key_down))
+            .relative()
             .size_full()
             .bg(tokens::BG_CANVAS)
             .text_color(tokens::TEXT_PRIMARY)
@@ -807,5 +837,6 @@ impl Render for FilemanShell {
                 self.command_mode_label(),
                 self.status.as_str(),
             ))
+            .when(self.help_popup_open, |this| this.child(render_help_popup()))
     }
 }

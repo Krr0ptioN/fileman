@@ -37,21 +37,10 @@ pub fn render_command_bar(mode: String, status: &str) -> impl IntoElement {
         .h(px(34.0))
         .px_3()
         .items_center()
-        .justify_between()
+        .justify_end()
         .bg(tokens::BG_PANEL_RAISED)
         .border_t_1()
         .border_color(tokens::BORDER_SUBTLE)
-        .child(
-            h_flex()
-                .items_center()
-                .gap_2()
-                .child(command_hint("j/k", "move"))
-                .child(command_hint("v/V", "mark"))
-                .child(command_hint("h/l", "parent/open"))
-                .child(command_hint("yy/dd/pp", "copy/move/paste"))
-                .child(command_hint("cw/x", "rename/delete"))
-                .child(command_hint("s/w", "layout/pane")),
-        )
         .child(
             h_flex()
                 .items_center()
@@ -68,27 +57,5 @@ pub fn render_command_bar(mode: String, status: &str) -> impl IntoElement {
                         .text_color(tokens::TEXT_MUTED)
                         .child(status.to_string()),
                 ),
-        )
-}
-
-fn command_hint(key: &'static str, label: &'static str) -> impl IntoElement {
-    h_flex()
-        .items_center()
-        .gap_1()
-        .child(
-            div()
-                .px_1()
-                .rounded(px(3.0))
-                .border_1()
-                .border_color(tokens::BORDER_SUBTLE)
-                .text_color(tokens::ACCENT)
-                .text_size(px(11.0))
-                .child(key),
-        )
-        .child(
-            div()
-                .text_size(px(12.0))
-                .text_color(tokens::TEXT_SECONDARY)
-                .child(label),
         )
 }
