@@ -311,6 +311,7 @@ pub fn read_directory_streaming(
             name: "..".to_string(),
             is_dir: true,
             is_symlink: false,
+            is_executable: false,
             link_target: None,
             location: EntryLocation::Remote {
                 host: host.to_string(),
@@ -349,10 +350,12 @@ pub fn read_directory_streaming(
         } else {
             None
         };
+        let is_executable = stat.perm.map(|p| p & 0o111 != 0).unwrap_or(false);
         batch.push(DirEntry {
             name,
             is_dir,
             is_symlink,
+            is_executable,
             link_target,
             location: EntryLocation::Remote {
                 host: host.to_string(),
