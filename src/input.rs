@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use fileman::{app_state, archive, core};
+use fileman::{app_state, archive, core, features::vim_keys::VimCommandStep};
 
 #[cfg(unix)]
 use crate::open_props_dialog;
@@ -1034,44 +1034,23 @@ fn clear_text_events(ctx: &egui::Context) {
 }
 
 fn apply_vim_char(app: &mut app_state::AppState, cache: &UiCache, ch: char) -> bool {
-    if ch.is_whitespace() {
-        return false;
-    }
-
-    let explicit_count = app.vim_command.count.take();
-    if app.vim_command.pending.is_empty() && ch.is_ascii_digit() {
-        if ch == '0' && explicit_count.is_none() {
-            let handled = execute_vim_sequence(app, cache, "0", 1, false);
-            app.vim_command.clear();
-            return handled;
+    match app.vim_command.push(ch) {
+        VimCommandStep::Ignored => false,
+        VimCommandStep::Pending => true,
+        VimCommandStep::Execute {
+            sequence,
+            count,
+            explicit_count,
+            had_pending,
+        } => {
+            let handled =
+                execute_vim_sequence(app, cache, sequence.as_str(), count, explicit_count);
+            if !handled && had_pending {
+                return apply_vim_char(app, cache, ch);
+            }
+            handled
         }
-        let digit = ch.to_digit(10).unwrap_or(0) as usize;
-        let base = explicit_count.unwrap_or(0);
-        app.vim_command.count = Some(base.saturating_mul(10).saturating_add(digit).min(9999));
-        return true;
     }
-
-    let had_pending = !app.vim_command.pending.is_empty();
-    let mut sequence = std::mem::take(&mut app.vim_command.pending);
-    sequence.push(ch);
-    if is_vim_prefix(&sequence) {
-        app.vim_command.pending = sequence;
-        app.vim_command.count = explicit_count;
-        return true;
-    }
-
-    let count = explicit_count.unwrap_or(1).max(1);
-    let explicit = explicit_count.is_some();
-    let handled = execute_vim_sequence(app, cache, sequence.as_str(), count, explicit);
-    app.vim_command.clear();
-    if !handled && had_pending {
-        return apply_vim_char(app, cache, ch);
-    }
-    handled
-}
-
-fn is_vim_prefix(sequence: &str) -> bool {
-    matches!(sequence, "c" | "d" | "g" | "n" | "u" | "y" | "z")
 }
 
 fn execute_vim_sequence(

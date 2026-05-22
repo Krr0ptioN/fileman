@@ -11,6 +11,7 @@ use crate::core::{
     SearchMode, SearchResult, SortMode, container_display_path, container_kind_from_path,
     format_preview_info, is_image_name, is_image_path, is_text_name, is_text_path,
 };
+pub use crate::features::vim_keys::VimCommandState;
 use crate::theme::Theme;
 
 /// Determine the syntax-highlighting extension for a path.
@@ -188,28 +189,6 @@ pub struct QuickJumpState {
     pub filtered: Vec<usize>,
     pub selected: usize,
     pub focus_input: bool,
-}
-
-#[derive(Default)]
-pub struct VimCommandState {
-    pub pending: String,
-    pub count: Option<usize>,
-}
-
-impl VimCommandState {
-    pub fn clear(&mut self) {
-        self.pending.clear();
-        self.count = None;
-    }
-
-    pub fn display(&self) -> Option<String> {
-        let mut text = String::new();
-        if let Some(count) = self.count {
-            text.push_str(&count.to_string());
-        }
-        text.push_str(&self.pending);
-        if text.is_empty() { None } else { Some(text) }
-    }
 }
 
 pub struct ArchiveFullIndex {
