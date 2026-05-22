@@ -45,6 +45,30 @@ FileMan is a fast, responsive two-panel file manager built with Rust, egui, and 
 | F9 | Toggle theme |
 | F10 | Theme picker |
 
+## Vim / Ranger Keys
+FileMan also accepts ranger-style normal-mode chains in browser panels. Counts
+work for movement and jumps, so `5j`, `3k`, `12G`, and `2gg` are valid.
+
+| Key | Action |
+|-----|--------|
+| j / k | Move down / up |
+| h / l | Parent folder / open |
+| gg / G | Top / bottom |
+| J / K | Half-page down / up |
+| H / L | Back / forward |
+| / / ? | Search by name / content |
+| v / uv | Mark / unmark all |
+| yy / dd / pp | Copy / move / confirm copy or move |
+| dD / x | Delete |
+| cw | Rename |
+| nf / nd | New file / new directory |
+| i / e / r | Preview / edit / open externally |
+| gt / gT | Next / previous tab |
+| gn / gc | New / close tab |
+| gh / gr | Home / filesystem root |
+| zt / zz / zb | Place selection top / center / bottom |
+| q | Close preview or picker |
+
 ## Build and Run
 ```bash
 cargo build --release
