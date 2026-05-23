@@ -1,12 +1,14 @@
 use std::{
     collections::HashSet,
+    fs,
     path::{Path, PathBuf},
 };
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    App, AppContext, Application, Bounds, Context, FocusHandle, InteractiveElement, IntoElement,
-    KeyDownEvent, ParentElement, Render, Styled, Window, WindowBounds, WindowOptions, px, size,
+    App, AppContext, Application, Bounds, ClipboardItem, Context, FocusHandle, InteractiveElement,
+    IntoElement, KeyDownEvent, ParentElement, Render, Styled, Window, WindowBounds, WindowOptions,
+    px, size,
 };
 use gpui_component::{Root, h_flex, v_flex};
 
@@ -15,11 +17,12 @@ use crate::features::file_browser::tokens;
 use crate::features::file_browser::{
     BrowserPanel, ClipboardKind, ClipboardOp, FileOperation, FileRow, FileTarget, FilemanAssets,
     InputMode, PaneMode, PanelSide, PendingConfirm, delete_status, render_command_bar,
-    render_help_popup, render_panel, render_title_bar, selection_status, toggle_targets,
+    render_help_popup, render_leader_map, render_panel, render_title_bar, selection_status,
+    toggle_targets,
 };
 use crate::features::keybind::{
-    BrowserCommand, HeldNavigation, LeaderAction, command_char_from_key, leader_action,
-    navigation_input,
+    BrowserCommand, HeldNavigation, HelpAction, command_char_from_key, continuations_for,
+    help_action, navigation_input,
 };
 use crate::features::vim_keys::{VimCommandState, VimCommandStep};
 
@@ -107,7 +110,7 @@ impl FilemanShell {
             clipboard: None,
             input_mode: InputMode::Normal,
             pending_confirm: None,
-            pane_mode: PaneMode::Dual,
+            pane_mode: PaneMode::Single,
             held_navigation: HeldNavigation::default(),
             help_popup_open: false,
             operation_in_flight: false,
@@ -130,7 +133,7 @@ impl FilemanShell {
             return true;
         }
 
-        if self.handle_leader_key(event) {
+        if self.handle_help_key(event) {
             self.held_navigation.reset();
             return true;
         }
@@ -146,18 +149,18 @@ impl FilemanShell {
         self.handle_input_mode_key(event, cx) || self.handle_confirm_key(event, cx)
     }
 
-    fn handle_leader_key(&mut self, event: &KeyDownEvent) -> bool {
-        let Some(action) = leader_action(event, self.help_popup_open) else {
+    fn handle_help_key(&mut self, event: &KeyDownEvent) -> bool {
+        let Some(action) = help_action(event, self.help_popup_open) else {
             return self.help_popup_open;
         };
 
         match action {
-            LeaderAction::Open => {
+            HelpAction::Open => {
                 self.vim_command.clear();
                 self.help_popup_open = true;
-                self.status = "key map".to_string();
+                self.status = "help".to_string();
             }
-            LeaderAction::Close => {
+            HelpAction::Close => {
                 self.help_popup_open = false;
                 self.status = "normal".to_string();
             }
@@ -362,6 +365,9 @@ impl FilemanShell {
                 self.status = "marks cleared".to_string();
             }
             BrowserCommand::Copy => return self.prepare_clipboard(ClipboardKind::Copy),
+            BrowserCommand::CopyPath => return self.copy_target_path(cx),
+            BrowserCommand::CopyName => return self.copy_target_name(cx),
+            BrowserCommand::CopyFileContents => return self.copy_file_contents(cx),
             BrowserCommand::MoveSelection => return self.prepare_clipboard(ClipboardKind::Move),
             BrowserCommand::Paste => return self.paste_clipboard(cx),
             BrowserCommand::Delete => return self.prepare_delete(),
@@ -473,6 +479,48 @@ impl FilemanShell {
         }
         if clear_clipboard {
             self.clipboard = None;
+        }
+        true
+    }
+
+    fn copy_target_path(&mut self, cx: &mut Context<Self>) -> bool {
+        match self.selected_target() {
+            Some(target) => {
+                let text = target.path.to_string_lossy().to_string();
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+                self.status = format!("copied path {}", target.name);
+            }
+            None => self.status = "nothing selected".to_string(),
+        }
+        true
+    }
+
+    fn copy_target_name(&mut self, cx: &mut Context<Self>) -> bool {
+        match self.selected_target() {
+            Some(target) => {
+                cx.write_to_clipboard(ClipboardItem::new_string(target.name.clone()));
+                self.status = format!("copied name {}", target.name);
+            }
+            None => self.status = "nothing selected".to_string(),
+        }
+        true
+    }
+
+    fn copy_file_contents(&mut self, cx: &mut Context<Self>) -> bool {
+        match self.selected_target() {
+            Some(target) if target.is_dir => {
+                self.status = "cannot copy directory contents".to_string();
+            }
+            Some(target) => match fs::read_to_string(&target.path) {
+                Ok(text) => {
+                    cx.write_to_clipboard(ClipboardItem::new_string(text));
+                    self.status = format!("copied contents {}", target.name);
+                }
+                Err(error) => {
+                    self.status = format!("copy contents failed: {error}");
+                }
+            },
+            None => self.status = "nothing selected".to_string(),
         }
         true
     }
@@ -821,6 +869,9 @@ impl Render for FilemanShell {
                 ))
                 .into_any_element()
         };
+        let leader_prefix = self.vim_command.pending.clone();
+        let show_leader_map =
+            !self.help_popup_open && continuations_for(leader_prefix.as_str()).is_some();
 
         v_flex()
             .id("fileman-shell")
@@ -837,6 +888,9 @@ impl Render for FilemanShell {
                 self.command_mode_label(),
                 self.status.as_str(),
             ))
+            .when(show_leader_map, |this| {
+                this.child(render_leader_map(leader_prefix))
+            })
             .when(self.help_popup_open, |this| this.child(render_help_popup()))
     }
 }

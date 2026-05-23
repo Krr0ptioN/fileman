@@ -44,7 +44,7 @@ pub fn render_panel(
         .overflow_hidden()
         .child(render_panel_header(panel, active))
         .child(
-            div().flex_grow().child(
+            div().flex_grow().p_1().child(
                 uniform_list(list_id, row_count, move |range, _, _| {
                     range
                         .map(|ix| {

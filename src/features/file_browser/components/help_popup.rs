@@ -4,21 +4,26 @@ use gpui_component::{h_flex, v_flex};
 use crate::features::{file_browser::tokens, keybind};
 
 pub fn render_help_popup() -> impl IntoElement {
-    v_flex()
+    h_flex()
         .absolute()
-        .top(px(54.0))
-        .right(px(18.0))
-        .w(px(500.0))
-        .max_w(px(720.0))
-        .p_3()
-        .gap_3()
-        .rounded(px(8.0))
-        .border_1()
-        .border_color(tokens::ROW_SELECTED_ACTIVE_BORDER)
-        .bg(tokens::BG_PANEL_RAISED)
-        .shadow_lg()
-        .child(header())
-        .children(keybind::KEYBIND_GROUPS.iter().map(group))
+        .top(px(68.0))
+        .left(px(0.0))
+        .right(px(0.0))
+        .justify_center()
+        .child(
+            v_flex()
+                .w(px(520.0))
+                .max_w(px(720.0))
+                .p_3()
+                .gap_3()
+                .rounded(px(8.0))
+                .border_1()
+                .border_color(tokens::ROW_SELECTED_ACTIVE_BORDER)
+                .bg(tokens::BG_PANEL_RAISED)
+                .shadow_lg()
+                .child(header())
+                .children(keybind::KEYBIND_GROUPS.iter().map(group)),
+        )
 }
 
 fn header() -> impl IntoElement {

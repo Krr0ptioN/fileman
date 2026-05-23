@@ -10,11 +10,11 @@ pub struct KeybindHelp {
 
 pub const KEYBIND_GROUPS: &[KeybindGroup] = &[
     KeybindGroup {
-        title: "Leader",
+        title: "Help",
         bindings: &[
             KeybindHelp {
                 keys: "; / Space",
-                action: "Open key map",
+                action: "Open help",
             },
             KeybindHelp {
                 keys: "Esc / q",
@@ -64,8 +64,12 @@ pub const KEYBIND_GROUPS: &[KeybindGroup] = &[
         title: "Operations",
         bindings: &[
             KeybindHelp {
-                keys: "yy / dd / pp",
-                action: "Copy / move / paste",
+                keys: "yy / yp / yn / yc",
+                action: "Copy item / path / name / contents",
+            },
+            KeybindHelp {
+                keys: "dd / pp",
+                action: "Move / paste",
             },
             KeybindHelp {
                 keys: "dD / x",

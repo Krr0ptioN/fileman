@@ -1,45 +1,100 @@
-use gpui::KeyDownEvent;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LeaderAction {
-    Open,
-    Close,
+pub struct LeaderContinuation {
+    pub key: &'static str,
+    pub command: &'static str,
 }
 
-pub fn leader_action(event: &KeyDownEvent, open: bool) -> Option<LeaderAction> {
-    match (event.is_held, event.keystroke.modifiers.modified()) {
-        (true, _) | (_, true) => None,
-        _ => leader_action_for_key(event.keystroke.key.as_str(), open),
-    }
-}
-
-fn leader_action_for_key(key: &str, open: bool) -> Option<LeaderAction> {
-    match (key, open) {
-        (";" | "space", false) => Some(LeaderAction::Open),
-        (";" | "space" | "escape" | "q", true) => Some(LeaderAction::Close),
+pub fn continuations_for(prefix: &str) -> Option<&'static [LeaderContinuation]> {
+    match prefix {
+        "y" => Some(YANK),
+        "d" => Some(DELETE),
+        "g" => Some(GO),
+        "c" => Some(CHANGE),
+        "u" => Some(UNDO),
+        "p" => Some(PASTE),
+        "z" => Some(VIEW),
+        "n" => Some(NEW),
         _ => None,
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{LeaderAction, leader_action_for_key};
+const YANK: &[LeaderContinuation] = &[
+    LeaderContinuation {
+        key: "y",
+        command: "copy selection",
+    },
+    LeaderContinuation {
+        key: "p",
+        command: "copy path",
+    },
+    LeaderContinuation {
+        key: "n",
+        command: "copy name",
+    },
+    LeaderContinuation {
+        key: "c",
+        command: "copy file contents",
+    },
+];
 
-    #[test]
-    fn triggers_leader_map_from_normal_mode() {
-        assert_eq!(leader_action_for_key(";", false), Some(LeaderAction::Open));
-        assert_eq!(
-            leader_action_for_key("space", false),
-            Some(LeaderAction::Open)
-        );
-    }
+const DELETE: &[LeaderContinuation] = &[
+    LeaderContinuation {
+        key: "d",
+        command: "mark for move",
+    },
+    LeaderContinuation {
+        key: "D",
+        command: "delete",
+    },
+];
 
-    #[test]
-    fn closes_open_leader_map() {
-        assert_eq!(
-            leader_action_for_key("escape", true),
-            Some(LeaderAction::Close)
-        );
-        assert_eq!(leader_action_for_key("q", true), Some(LeaderAction::Close));
-    }
-}
+const GO: &[LeaderContinuation] = &[LeaderContinuation {
+    key: "g",
+    command: "go to top",
+}];
+
+const CHANGE: &[LeaderContinuation] = &[LeaderContinuation {
+    key: "w",
+    command: "rename",
+}];
+
+const UNDO: &[LeaderContinuation] = &[
+    LeaderContinuation {
+        key: "v",
+        command: "clear marks",
+    },
+    LeaderContinuation {
+        key: "V",
+        command: "clear marks",
+    },
+];
+
+const PASTE: &[LeaderContinuation] = &[LeaderContinuation {
+    key: "p",
+    command: "paste",
+}];
+
+const VIEW: &[LeaderContinuation] = &[
+    LeaderContinuation {
+        key: "t",
+        command: "selection top",
+    },
+    LeaderContinuation {
+        key: "z",
+        command: "selection center",
+    },
+    LeaderContinuation {
+        key: "b",
+        command: "selection bottom",
+    },
+];
+
+const NEW: &[LeaderContinuation] = &[
+    LeaderContinuation {
+        key: "f",
+        command: "new file",
+    },
+    LeaderContinuation {
+        key: "d",
+        command: "new directory",
+    },
+];

@@ -11,6 +11,9 @@ pub enum BrowserCommand {
     ToggleAllMarks,
     ClearMarks,
     Copy,
+    CopyPath,
+    CopyName,
+    CopyFileContents,
     MoveSelection,
     Paste,
     Delete,
@@ -47,6 +50,9 @@ impl BrowserCommand {
             "V" => Some(Self::ToggleAllMarks),
             "uv" | "uV" => Some(Self::ClearMarks),
             "yy" => Some(Self::Copy),
+            "yp" => Some(Self::CopyPath),
+            "yn" => Some(Self::CopyName),
+            "yc" => Some(Self::CopyFileContents),
             "dd" => Some(Self::MoveSelection),
             "pp" => Some(Self::Paste),
             "dD" | "x" => Some(Self::Delete),
@@ -67,48 +73,29 @@ impl BrowserCommand {
 mod tests {
     use super::BrowserCommand;
 
+    fn command(sequence: &str, count: usize, explicit_count: bool) -> Option<BrowserCommand> {
+        BrowserCommand::from_vim_sequence(sequence, count, explicit_count)
+    }
+
     #[test]
     fn maps_counted_navigation() {
-        assert_eq!(
-            BrowserCommand::from_vim_sequence("j", 4, true),
-            Some(BrowserCommand::Move(4))
-        );
-        assert_eq!(
-            BrowserCommand::from_vim_sequence("k", 3, true),
-            Some(BrowserCommand::Move(-3))
-        );
-        assert_eq!(
-            BrowserCommand::from_vim_sequence("J", 2, true),
-            Some(BrowserCommand::MovePage(16))
-        );
+        assert_eq!(command("j", 4, true), Some(BrowserCommand::Move(4)));
+        assert_eq!(command("k", 3, true), Some(BrowserCommand::Move(-3)));
+        assert_eq!(command("J", 2, true), Some(BrowserCommand::MovePage(16)));
     }
 
     #[test]
     fn maps_line_navigation() {
-        assert_eq!(
-            BrowserCommand::from_vim_sequence("gg", 1, false),
-            Some(BrowserCommand::Line(0))
-        );
-        assert_eq!(
-            BrowserCommand::from_vim_sequence("G", 10, true),
-            Some(BrowserCommand::Line(9))
-        );
-        assert_eq!(
-            BrowserCommand::from_vim_sequence("G", 1, false),
-            Some(BrowserCommand::Last)
-        );
+        assert_eq!(command("gg", 1, false), Some(BrowserCommand::Line(0)));
+        assert_eq!(command("G", 10, true), Some(BrowserCommand::Line(9)));
+        assert_eq!(command("G", 1, false), Some(BrowserCommand::Last));
     }
 
     #[test]
     fn maps_operations() {
-        assert_eq!(
-            BrowserCommand::from_vim_sequence("yy", 1, false),
-            Some(BrowserCommand::Copy)
-        );
-        assert_eq!(
-            BrowserCommand::from_vim_sequence("dD", 1, false),
-            Some(BrowserCommand::Delete)
-        );
-        assert_eq!(BrowserCommand::from_vim_sequence("zz", 1, false), None);
+        assert_eq!(command("yy", 1, false), Some(BrowserCommand::Copy));
+        assert_eq!(command("yp", 1, false), Some(BrowserCommand::CopyPath));
+        assert_eq!(command("dD", 1, false), Some(BrowserCommand::Delete));
+        assert_eq!(command("zz", 1, false), None);
     }
 }

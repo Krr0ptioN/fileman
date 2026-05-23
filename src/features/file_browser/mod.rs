@@ -7,7 +7,9 @@ pub mod state;
 pub mod tokens;
 
 pub use assets::FilemanAssets;
-pub use components::{render_command_bar, render_help_popup, render_panel, render_title_bar};
+pub use components::{
+    render_command_bar, render_help_popup, render_leader_map, render_panel, render_title_bar,
+};
 pub use ops::FileOperation;
 pub use rows::FileRow;
 pub use selection::{delete_status, selection_status, toggle_targets};
