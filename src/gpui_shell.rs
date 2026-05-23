@@ -21,8 +21,8 @@ use crate::features::file_browser::{
     toggle_targets,
 };
 use crate::features::keybind::{
-    BrowserCommand, HeldNavigation, HelpAction, command_char_from_key, continuations_for,
-    help_action, navigation_input,
+    BrowserCommand, HeldNavigation, HelpAction, KeybindArgs, KeybindRegistry,
+    command_char_from_key, file_manager_keybinds, help_action, navigation_input,
 };
 use crate::features::vim_keys::{VimCommandState, VimCommandStep};
 
@@ -65,7 +65,9 @@ pub struct FilemanShell {
     pending_confirm: Option<PendingConfirm>,
     pane_mode: PaneMode,
     held_navigation: HeldNavigation,
+    keybinds: KeybindRegistry<BrowserCommand>,
     help_popup_open: bool,
+    leader_map_open: bool,
     operation_in_flight: bool,
     status: String,
 }
@@ -112,7 +114,9 @@ impl FilemanShell {
             pending_confirm: None,
             pane_mode: PaneMode::Single,
             held_navigation: HeldNavigation::default(),
+            keybinds: file_manager_keybinds(),
             help_popup_open: false,
+            leader_map_open: false,
             operation_in_flight: false,
             status: "normal".to_string(),
         };
@@ -133,7 +137,17 @@ impl FilemanShell {
             return true;
         }
 
+        if self.handle_cancel_key(event) {
+            self.held_navigation.reset();
+            return true;
+        }
+
         if self.handle_help_key(event) {
+            self.held_navigation.reset();
+            return true;
+        }
+
+        if self.handle_leader_key(event, cx) {
             self.held_navigation.reset();
             return true;
         }
@@ -157,6 +171,7 @@ impl FilemanShell {
         match action {
             HelpAction::Open => {
                 self.vim_command.clear();
+                self.leader_map_open = false;
                 self.help_popup_open = true;
                 self.status = "help".to_string();
             }
@@ -168,8 +183,46 @@ impl FilemanShell {
         true
     }
 
+    fn handle_cancel_key(&mut self, event: &KeyDownEvent) -> bool {
+        if event.is_held || event.keystroke.modifiers.modified() {
+            return false;
+        }
+        if event.keystroke.key.as_str() != "escape" {
+            return false;
+        }
+
+        self.vim_command.clear();
+        self.help_popup_open = false;
+        self.leader_map_open = false;
+        self.status = "normal".to_string();
+        true
+    }
+
+    fn handle_leader_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        if event.is_held || event.keystroke.modifiers.modified() || self.help_popup_open {
+            return self.leader_map_open;
+        }
+
+        match event.keystroke.key.as_str() {
+            ";" | "space" if self.vim_command.pending.is_empty() => {
+                self.leader_map_open = true;
+                self.status = "leader".to_string();
+                true
+            }
+            _ if self.leader_map_open => {
+                self.leader_map_open = false;
+                command_char_from_key(event).is_none_or(|ch| {
+                    self.apply_vim_char(ch, cx);
+                    true
+                })
+            }
+            _ => false,
+        }
+    }
+
     fn handle_vim_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
         self.held_navigation.reset();
+        self.leader_map_open = false;
         let Some(ch) = command_char_from_key(event) else {
             return false;
         };
@@ -302,7 +355,11 @@ impl FilemanShell {
     }
 
     fn apply_vim_char(&mut self, ch: char, cx: &mut Context<Self>) -> bool {
-        match self.vim_command.push(ch) {
+        let keybinds = &self.keybinds;
+        match self
+            .vim_command
+            .push_with_prefixes(ch, |sequence| keybinds.is_prefix(sequence))
+        {
             VimCommandStep::Ignored => false,
             VimCommandStep::Pending => {
                 self.status = self
@@ -334,8 +391,13 @@ impl FilemanShell {
         explicit_count: bool,
         cx: &mut Context<Self>,
     ) -> bool {
-        let Some(command) = BrowserCommand::from_vim_sequence(sequence, count, explicit_count)
-        else {
+        let Some(command) = self.keybinds.command_for(
+            sequence,
+            KeybindArgs {
+                count,
+                explicit_count,
+            },
+        ) else {
             return false;
         };
 
@@ -378,6 +440,12 @@ impl FilemanShell {
             }
             BrowserCommand::SwitchPanel => {
                 self.switch_active_panel();
+                return true;
+            }
+            BrowserCommand::OpenHelp => {
+                self.help_popup_open = true;
+                self.leader_map_open = false;
+                self.status = "help".to_string();
                 return true;
             }
             BrowserCommand::Reload => {
@@ -770,6 +838,7 @@ impl FilemanShell {
             (InputMode::Rename { .. }, _) => "rename".to_string(),
             (_, Some(_)) => "confirm".to_string(),
             _ if self.help_popup_open => "keys".to_string(),
+            _ if self.leader_map_open => "leader".to_string(),
             _ => self
                 .vim_command
                 .display()
@@ -869,9 +938,19 @@ impl Render for FilemanShell {
                 ))
                 .into_any_element()
         };
-        let leader_prefix = self.vim_command.pending.clone();
-        let show_leader_map =
-            !self.help_popup_open && continuations_for(leader_prefix.as_str()).is_some();
+        let leader_prefix = match self.leader_map_open {
+            true => String::new(),
+            false => self.vim_command.pending.clone(),
+        };
+        let leader_entries = match (
+            self.help_popup_open,
+            self.leader_map_open,
+            leader_prefix.is_empty(),
+        ) {
+            (true, _, _) | (false, false, true) => Vec::new(),
+            _ => self.keybinds.leader_continuations(leader_prefix.as_str()),
+        };
+        let show_leader_map = !leader_entries.is_empty();
 
         v_flex()
             .id("fileman-shell")
@@ -889,8 +968,10 @@ impl Render for FilemanShell {
                 self.status.as_str(),
             ))
             .when(show_leader_map, |this| {
-                this.child(render_leader_map(leader_prefix))
+                this.child(render_leader_map(leader_prefix, leader_entries))
             })
-            .when(self.help_popup_open, |this| this.child(render_help_popup()))
+            .when(self.help_popup_open, |this| {
+                this.child(render_help_popup(self.keybinds.help_groups()))
+            })
     }
 }

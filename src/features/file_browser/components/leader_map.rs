@@ -1,9 +1,9 @@
 use gpui::{IntoElement, ParentElement, Styled, div, px};
 use gpui_component::{h_flex, v_flex};
 
-use crate::features::{file_browser::tokens, keybind};
+use crate::features::{file_browser::tokens, keybind::LeaderContinuation};
 
-pub fn render_leader_map(prefix: String) -> impl IntoElement {
+pub fn render_leader_map(prefix: String, entries: Vec<LeaderContinuation>) -> impl IntoElement {
     h_flex()
         .absolute()
         .bottom(px(38.0))
@@ -21,12 +21,7 @@ pub fn render_leader_map(prefix: String) -> impl IntoElement {
                 .bg(tokens::BG_PANEL_RAISED)
                 .shadow_md()
                 .child(header(&prefix))
-                .children(
-                    keybind::continuations_for(&prefix)
-                        .unwrap_or(&[])
-                        .iter()
-                        .map(row),
-                ),
+                .children(entries.into_iter().map(row)),
         )
 }
 
@@ -49,7 +44,7 @@ fn header(prefix: &str) -> impl IntoElement {
         )
 }
 
-fn row(item: &keybind::LeaderContinuation) -> impl IntoElement {
+fn row(item: LeaderContinuation) -> impl IntoElement {
     h_flex()
         .items_center()
         .gap_2()

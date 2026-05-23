@@ -15,8 +15,8 @@ pub fn help_action(event: &KeyDownEvent, open: bool) -> Option<HelpAction> {
 
 fn help_action_for_key(key: &str, open: bool) -> Option<HelpAction> {
     match (key, open) {
-        (";" | "space", false) => Some(HelpAction::Open),
-        (";" | "space" | "escape" | "q", true) => Some(HelpAction::Close),
+        ("?", false) => Some(HelpAction::Open),
+        ("?" | "escape" | "q", true) => Some(HelpAction::Close),
         _ => None,
     }
 }
@@ -27,8 +27,7 @@ mod tests {
 
     #[test]
     fn opens_help_from_normal_mode() {
-        assert_eq!(help_action_for_key(";", false), Some(HelpAction::Open));
-        assert_eq!(help_action_for_key("space", false), Some(HelpAction::Open));
+        assert_eq!(help_action_for_key("?", false), Some(HelpAction::Open));
     }
 
     #[test]

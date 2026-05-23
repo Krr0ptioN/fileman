@@ -25,6 +25,14 @@ impl VimCommandState {
     }
 
     pub fn push(&mut self, ch: char) -> VimCommandStep {
+        self.push_with_prefixes(ch, is_prefix)
+    }
+
+    pub fn push_with_prefixes(
+        &mut self,
+        ch: char,
+        is_prefix: impl Fn(&str) -> bool,
+    ) -> VimCommandStep {
         if ch.is_whitespace() {
             return VimCommandStep::Ignored;
         }

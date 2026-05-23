@@ -1,9 +1,12 @@
 use gpui::{IntoElement, ParentElement, Styled, div, px};
 use gpui_component::{h_flex, v_flex};
 
-use crate::features::{file_browser::tokens, keybind};
+use crate::features::{
+    file_browser::tokens,
+    keybind::{KeybindGroup, KeybindHelp},
+};
 
-pub fn render_help_popup() -> impl IntoElement {
+pub fn render_help_popup(groups: Vec<KeybindGroup>) -> impl IntoElement {
     h_flex()
         .absolute()
         .top(px(68.0))
@@ -22,7 +25,7 @@ pub fn render_help_popup() -> impl IntoElement {
                 .bg(tokens::BG_PANEL_RAISED)
                 .shadow_lg()
                 .child(header())
-                .children(keybind::KEYBIND_GROUPS.iter().map(group)),
+                .children(groups.into_iter().map(group)),
         )
 }
 
@@ -45,7 +48,7 @@ fn header() -> impl IntoElement {
         )
 }
 
-fn group(group: &keybind::KeybindGroup) -> impl IntoElement {
+fn group(group: KeybindGroup) -> impl IntoElement {
     v_flex()
         .gap_1()
         .child(
@@ -54,10 +57,10 @@ fn group(group: &keybind::KeybindGroup) -> impl IntoElement {
                 .text_color(tokens::ACCENT)
                 .child(group.title),
         )
-        .children(group.bindings.iter().map(binding))
+        .children(group.bindings.into_iter().map(binding))
 }
 
-fn binding(binding: &keybind::KeybindHelp) -> impl IntoElement {
+fn binding(binding: KeybindHelp) -> impl IntoElement {
     h_flex()
         .items_center()
         .justify_between()
