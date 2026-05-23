@@ -1,20 +1,15 @@
-mod command;
-mod executor;
 mod general;
 mod navigation;
 mod operations;
 mod selection;
-mod target;
 #[cfg(test)]
 mod tests;
 mod vim;
 
 use super::{KeybindArgs, KeybindRegistry, KeybindSpec};
 
-pub use command::BrowserCommand;
-pub use executor::execute_browser_sequence;
-pub use target::BrowserCommandExecutor;
-pub use vim::{BrowserVimInput, apply_browser_vim_char};
+pub use crate::features::file_browser::BrowserCommand;
+pub use vim::{BrowserVimOutcome, apply_browser_vim_char};
 
 type Registry = KeybindRegistry<BrowserCommand>;
 

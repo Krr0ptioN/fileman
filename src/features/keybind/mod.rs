@@ -8,10 +8,7 @@ mod navigation;
 mod registry;
 mod vim_state;
 
-pub use browser::{
-    BrowserCommand, BrowserCommandExecutor, BrowserVimInput, apply_browser_vim_char,
-    execute_browser_sequence, file_manager_keybinds,
-};
+pub use browser::{BrowserVimOutcome, apply_browser_vim_char, file_manager_keybinds};
 pub use control::{ControlAction, control_action};
 pub use dispatch::{AppKeyHandler, KeyCommandAction, handle_key_command};
 pub use gpui_keys::command_char_from_key;
