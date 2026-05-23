@@ -25,7 +25,7 @@ pub mod archive;
 pub mod core;
 pub mod elevate;
 pub mod features;
-pub mod gpui_shell;
+pub mod shell;
 pub mod image_decode;
 pub mod sftp;
 pub mod snapshot;

@@ -55,8 +55,8 @@ pub fn run(start_path: Option<PathBuf>) {
 }
 
 pub struct FilemanShell {
-    left: BrowserPanel,
-    right: BrowserPanel,
+    primary: BrowserPanel,
+    secondary: BrowserPanel,
     active: PanelSide,
     pub(crate) focus_handle: FocusHandle,
     vim_command: VimCommandState,
@@ -82,7 +82,7 @@ impl FilemanShell {
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| PathBuf::from("."));
         let mut shell = Self {
-            left: BrowserPanel {
+            primary: BrowserPanel {
                 side: PanelSide::Left,
                 title: "Primary",
                 path: start_path.clone(),
@@ -94,7 +94,7 @@ impl FilemanShell {
                 load_generation: 0,
                 scroll_handle: Default::default(),
             },
-            right: BrowserPanel {
+            secondary: BrowserPanel {
                 side: PanelSide::Right,
                 title: "Secondary",
                 path: start_path.clone(),
@@ -730,8 +730,8 @@ impl FilemanShell {
     }
 
     fn reload_panels_after_operation(&mut self, cx: &mut Context<Self>) {
-        let left = self.left.path.clone();
-        let right = self.right.path.clone();
+        let left = self.primary.path.clone();
+        let right = self.secondary.path.clone();
         self.load_panel(PanelSide::Left, left, None, cx);
         self.load_panel(PanelSide::Right, right, None, cx);
     }
@@ -814,22 +814,22 @@ impl FilemanShell {
 
     fn active_panel(&self) -> &BrowserPanel {
         match self.active {
-            PanelSide::Left => &self.left,
-            PanelSide::Right => &self.right,
+            PanelSide::Left => &self.primary,
+            PanelSide::Right => &self.secondary,
         }
     }
 
     fn active_panel_mut(&mut self) -> &mut BrowserPanel {
         match self.active {
-            PanelSide::Left => &mut self.left,
-            PanelSide::Right => &mut self.right,
+            PanelSide::Left => &mut self.primary,
+            PanelSide::Right => &mut self.secondary,
         }
     }
 
     fn panel_mut(&mut self, side: PanelSide) -> &mut BrowserPanel {
         match side {
-            PanelSide::Left => &mut self.left,
-            PanelSide::Right => &mut self.right,
+            PanelSide::Left => &mut self.primary,
+            PanelSide::Right => &mut self.secondary,
         }
     }
 
@@ -883,7 +883,7 @@ impl Render for FilemanShell {
                     .gap_2()
                     .p_2()
                     .child(render_panel(
-                        &self.left,
+                        &self.primary,
                         true,
                         self.clipboard.as_ref(),
                         self.pending_confirm.as_ref(),
@@ -894,7 +894,7 @@ impl Render for FilemanShell {
                     .gap_2()
                     .p_2()
                     .child(render_panel(
-                        &self.right,
+                        &self.secondary,
                         true,
                         self.clipboard.as_ref(),
                         self.pending_confirm.as_ref(),
@@ -907,13 +907,13 @@ impl Render for FilemanShell {
                 .gap_2()
                 .p_2()
                 .child(render_panel(
-                    &self.left,
+                    &self.primary,
                     self.active == PanelSide::Left,
                     self.clipboard.as_ref(),
                     self.pending_confirm.as_ref(),
                 ))
                 .child(render_panel(
-                    &self.right,
+                    &self.secondary,
                     self.active == PanelSide::Right,
                     self.clipboard.as_ref(),
                     self.pending_confirm.as_ref(),
@@ -925,13 +925,13 @@ impl Render for FilemanShell {
                 .gap_2()
                 .p_2()
                 .child(render_panel(
-                    &self.left,
+                    &self.primary,
                     self.active == PanelSide::Left,
                     self.clipboard.as_ref(),
                     self.pending_confirm.as_ref(),
                 ))
                 .child(render_panel(
-                    &self.right,
+                    &self.secondary,
                     self.active == PanelSide::Right,
                     self.clipboard.as_ref(),
                     self.pending_confirm.as_ref(),
