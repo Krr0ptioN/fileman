@@ -13,7 +13,7 @@ pub use control::{ControlAction, control_action};
 pub use dispatch::{AppKeyHandler, KeyCommandAction, handle_key_command};
 pub use gpui_keys::command_char_from_key;
 pub use help::{HelpAction, help_action};
-pub use modes::{ConfirmKeyAction, RenameKeyAction, confirm_key_action, rename_key_action};
+pub use modes::{confirm_key_action, rename_key_action};
 pub use navigation::{HeldNavigation, navigation_input};
 pub use registry::{
     KeybindArgs, KeybindGroup, KeybindHelp, KeybindRegistry, KeybindSpec, LeaderContinuation,

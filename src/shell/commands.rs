@@ -1,13 +1,8 @@
-use std::path::PathBuf;
-
 use gpui::{Context, UpdateGlobal};
 
 use super::FilemanShell;
 use crate::features::{
-    clipboard::{
-        ClipboardState, PastePlan, copy_file_contents, copy_target_name, copy_target_path,
-        plan_paste, prepare_clipboard,
-    },
+    clipboard::apply_clipboard_effect as apply_clipboard_runtime_effect,
     file_browser::{
         BrowserCommand, BrowserCommandEffect, BrowserCommandOutcome, BrowserCommandState,
         FileOperation, execute_browser_command,
@@ -36,7 +31,11 @@ impl FilemanShell {
         true
     }
 
-    fn apply_browser_outcome(&mut self, outcome: BrowserCommandOutcome, cx: &mut Context<Self>) {
+    pub(super) fn apply_browser_outcome(
+        &mut self,
+        outcome: BrowserCommandOutcome,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(status) = outcome.status {
             self.status = status;
         }
@@ -46,17 +45,8 @@ impl FilemanShell {
             BrowserCommandEffect::LoadActive { path, prefer_name } => {
                 self.load_panel(self.active, path, prefer_name, cx);
             }
-            BrowserCommandEffect::PrepareClipboard { kind, targets } => {
-                self.status = ClipboardState::update_global(cx, |clipboard, _| {
-                    prepare_clipboard(clipboard, kind, targets)
-                });
-            }
-            BrowserCommandEffect::CopyPath(target) => self.status = copy_target_path(target, cx),
-            BrowserCommandEffect::CopyName(target) => self.status = copy_target_name(target, cx),
-            BrowserCommandEffect::CopyFileContents(target) => {
-                self.status = copy_file_contents(target, cx);
-            }
-            BrowserCommandEffect::PasteInto(dst_dir) => self.paste_into(dst_dir, cx),
+            BrowserCommandEffect::Clipboard(effect) => self.apply_clipboard_effect(effect, cx),
+            BrowserCommandEffect::RunOperation(operation) => self.run_operation(operation, cx),
             BrowserCommandEffect::TogglePaneMode => {
                 let pane_mode =
                     LayoutState::update_global(cx, |layout, _| layout.toggle_pane_mode());
@@ -74,28 +64,24 @@ impl FilemanShell {
         }
     }
 
-    fn paste_into(&mut self, dst_dir: PathBuf, cx: &mut Context<Self>) {
-        let plan = ClipboardState::update_global(cx, |clipboard, _| plan_paste(clipboard, dst_dir));
-        match plan {
-            PastePlan::Empty => self.status = "clipboard empty".to_string(),
-            PastePlan::Ready {
-                kind,
-                targets,
-                dst_dir,
-                clear_after_paste,
-            } => {
-                self.run_operation(
-                    FileOperation::Paste {
-                        kind,
-                        targets,
-                        dst_dir,
-                    },
-                    cx,
-                );
-                if clear_after_paste {
-                    ClipboardState::update_global(cx, |clipboard, _| clipboard.clear());
-                }
-            }
+    fn apply_clipboard_effect(
+        &mut self,
+        effect: crate::features::clipboard::ClipboardEffect,
+        cx: &mut Context<Self>,
+    ) {
+        let outcome = apply_clipboard_runtime_effect(effect, cx);
+        if !outcome.status.is_empty() {
+            self.status = outcome.status;
+        }
+        if let Some(paste) = outcome.paste {
+            self.run_operation(
+                FileOperation::Paste {
+                    kind: paste.kind,
+                    targets: paste.targets,
+                    dst_dir: paste.dst_dir,
+                },
+                cx,
+            );
         }
     }
 }

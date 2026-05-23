@@ -1,47 +1,31 @@
 use gpui::KeyDownEvent;
 
 use super::command_char_from_key;
+use crate::features::file_browser::{ConfirmModeAction, RenameModeAction};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RenameKeyAction {
-    Cancel,
-    Backspace,
-    Submit,
-    Insert(char),
-    Consume,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ConfirmKeyAction {
-    Cancel,
-    Confirm,
-    Consume,
-    Ignore,
-}
-
-pub fn rename_key_action(event: &KeyDownEvent) -> RenameKeyAction {
+pub fn rename_key_action(event: &KeyDownEvent) -> RenameModeAction {
     if event.is_held {
-        return RenameKeyAction::Consume;
+        return RenameModeAction::Consume;
     }
 
     match event.keystroke.key.as_str() {
-        "escape" => RenameKeyAction::Cancel,
-        "backspace" => RenameKeyAction::Backspace,
-        "enter" => RenameKeyAction::Submit,
+        "escape" => RenameModeAction::Cancel,
+        "backspace" => RenameModeAction::Backspace,
+        "enter" => RenameModeAction::Submit,
         _ => command_char_from_key(event)
-            .map(RenameKeyAction::Insert)
-            .unwrap_or(RenameKeyAction::Consume),
+            .map(RenameModeAction::Insert)
+            .unwrap_or(RenameModeAction::Consume),
     }
 }
 
-pub fn confirm_key_action(event: &KeyDownEvent) -> ConfirmKeyAction {
+pub fn confirm_key_action(event: &KeyDownEvent) -> ConfirmModeAction {
     if event.is_held {
-        return ConfirmKeyAction::Consume;
+        return ConfirmModeAction::Consume;
     }
 
     match event.keystroke.key.as_str() {
-        "escape" | "n" => ConfirmKeyAction::Cancel,
-        "enter" | "y" => ConfirmKeyAction::Confirm,
-        _ => ConfirmKeyAction::Ignore,
+        "escape" | "n" => ConfirmModeAction::Cancel,
+        "enter" | "y" => ConfirmModeAction::Confirm,
+        _ => ConfirmModeAction::Ignore,
     }
 }

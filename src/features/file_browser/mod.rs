@@ -5,6 +5,8 @@ pub mod command_effect;
 pub mod command_executor;
 pub mod command_state;
 pub mod components;
+pub mod mode_action;
+pub mod mode_executor;
 pub mod navigation;
 pub mod ops;
 pub mod rows;
@@ -24,6 +26,8 @@ pub use command_state::BrowserCommandState;
 pub use components::{
     CommandBar, FilePanel, HelpPopup, LayoutVariant, LeaderMap, PanelLayout, TitleBar,
 };
+pub use mode_action::{ConfirmModeAction, RenameModeAction};
+pub use mode_executor::{apply_confirm_action, apply_rename_action};
 pub use navigation::{PanelNavigation, parent_navigation, selected_navigation};
 pub use ops::FileOperation;
 pub use rows::FileRow;

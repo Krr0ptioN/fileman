@@ -1,23 +1,15 @@
-use std::path::PathBuf;
+use crate::features::clipboard::ClipboardEffect;
 
-use crate::features::clipboard::ClipboardKind;
-
-use super::state::FileTarget;
+use super::ops::FileOperation;
 
 pub enum BrowserCommandEffect {
     None,
     LoadActive {
-        path: PathBuf,
+        path: std::path::PathBuf,
         prefer_name: Option<String>,
     },
-    PrepareClipboard {
-        kind: ClipboardKind,
-        targets: Vec<FileTarget>,
-    },
-    CopyPath(Option<FileTarget>),
-    CopyName(Option<FileTarget>),
-    CopyFileContents(Option<FileTarget>),
-    PasteInto(PathBuf),
+    Clipboard(ClipboardEffect),
+    RunOperation(FileOperation),
     TogglePaneMode,
     OpenHelp,
     ReloadActive,

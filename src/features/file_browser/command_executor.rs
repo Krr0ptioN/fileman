@@ -1,4 +1,4 @@
-use crate::features::clipboard::ClipboardKind;
+use crate::features::clipboard::{ClipboardEffect, ClipboardKind};
 
 use super::{
     BrowserCommand, BrowserCommandEffect, BrowserCommandOutcome, BrowserCommandState,
@@ -60,17 +60,19 @@ fn execute_ready_command(
         }
         BrowserCommand::Copy => clipboard_outcome(state, ClipboardKind::Copy),
         BrowserCommand::MoveSelection => clipboard_outcome(state, ClipboardKind::Move),
-        BrowserCommand::CopyPath => BrowserCommandOutcome::effect(BrowserCommandEffect::CopyPath(
-            selected_target(state.active_panel()),
+        BrowserCommand::CopyPath => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
+            ClipboardEffect::CopyPath(selected_target(state.active_panel())),
         )),
-        BrowserCommand::CopyName => BrowserCommandOutcome::effect(BrowserCommandEffect::CopyName(
-            selected_target(state.active_panel()),
+        BrowserCommand::CopyName => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
+            ClipboardEffect::CopyName(selected_target(state.active_panel())),
         )),
-        BrowserCommand::CopyFileContents => BrowserCommandOutcome::effect(
-            BrowserCommandEffect::CopyFileContents(selected_target(state.active_panel())),
-        ),
-        BrowserCommand::Paste => BrowserCommandOutcome::effect(BrowserCommandEffect::PasteInto(
-            state.active_panel().path.clone(),
+        BrowserCommand::CopyFileContents => {
+            BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
+                ClipboardEffect::CopyFileContents(selected_target(state.active_panel())),
+            ))
+        }
+        BrowserCommand::Paste => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
+            ClipboardEffect::PasteInto(state.active_panel().path.clone()),
         )),
         BrowserCommand::Delete => {
             let targets = effective_targets(state.active_panel());
@@ -94,10 +96,10 @@ fn clipboard_outcome(
     state: &BrowserCommandState<'_>,
     kind: ClipboardKind,
 ) -> BrowserCommandOutcome {
-    BrowserCommandOutcome::effect(BrowserCommandEffect::PrepareClipboard {
+    BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(ClipboardEffect::Prepare {
         kind,
         targets: effective_targets(state.active_panel()),
-    })
+    }))
 }
 
 fn navigation_outcome(navigation: super::PanelNavigation) -> BrowserCommandOutcome {

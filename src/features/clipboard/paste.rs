@@ -23,8 +23,10 @@ use crate::features::file_browser::FileTarget;
 //  - Code improvements: refactor the file operation logic to be more modular and testable, add error handling and logging, etc.
 //  - Future features: support for additional file operations (e.g. compressing/extracting files, creating symbolic links, etc.), support for plugins/extensions that can add new commands and features, etc.
 //
-// TODO: Wayland clipboard support
-// - wl-clipboard or similar tools to interact with the system clipboard)
+// TODO: Wayland file clipboard support
+// - If file-list clipboard integration is needed, extend the GPUI platform backend instead of shelling out to wl-clipboard here.
+//
+// NOTE: native text clipboard writes go through GPUI's platform clipboard.
 //
 // NOTE: some of these TODOs may require significant changes to the code structure and architecture, and
 // may be better suited for a future version of the application rather than being implemented all at once.

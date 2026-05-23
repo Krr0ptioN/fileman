@@ -2,10 +2,9 @@ use gpui::{Context, KeyDownEvent};
 
 use super::FilemanShell;
 use crate::features::{
-    file_browser::{FileOperation, InputMode, PendingConfirm},
+    file_browser::{apply_confirm_action, apply_rename_action},
     keybind::{
-        ConfirmKeyAction, ControlAction, RenameKeyAction, confirm_key_action, control_action,
-        navigation_input, rename_key_action,
+        ControlAction, confirm_key_action, control_action, navigation_input, rename_key_action,
     },
 };
 
@@ -30,37 +29,12 @@ impl FilemanShell {
         event: &KeyDownEvent,
         cx: &mut Context<Self>,
     ) -> bool {
-        let InputMode::Rename { target, input } = &mut self.input_mode else {
-            return false;
-        };
-
-        match rename_key_action(event) {
-            RenameKeyAction::Cancel => {
-                self.input_mode = InputMode::Normal;
-                self.status = "rename cancelled".to_string();
+        match apply_rename_action(&mut self.input_mode, rename_key_action(event)) {
+            Some(outcome) => {
+                self.apply_browser_outcome(outcome, cx);
                 true
             }
-            RenameKeyAction::Backspace => {
-                input.pop();
-                self.status = format!("rename: {input}");
-                true
-            }
-            RenameKeyAction::Submit => {
-                let target = target.clone();
-                let new_name = input.trim().to_string();
-                self.input_mode = InputMode::Normal;
-                match new_name.is_empty() || new_name == target.name {
-                    true => self.status = "rename unchanged".to_string(),
-                    false => self.run_operation(FileOperation::Rename { target, new_name }, cx),
-                }
-                true
-            }
-            RenameKeyAction::Insert(ch) => {
-                input.push(ch);
-                self.status = format!("rename: {input}");
-                true
-            }
-            RenameKeyAction::Consume => true,
+            None => false,
         }
     }
 
@@ -69,27 +43,12 @@ impl FilemanShell {
         event: &KeyDownEvent,
         cx: &mut Context<Self>,
     ) -> bool {
-        let Some(confirm) = self.pending_confirm.clone() else {
-            return false;
-        };
-
-        match confirm_key_action(event) {
-            ConfirmKeyAction::Cancel => {
-                self.pending_confirm = None;
-                self.status = "cancelled".to_string();
+        match apply_confirm_action(&mut self.pending_confirm, confirm_key_action(event)) {
+            Some(outcome) => {
+                self.apply_browser_outcome(outcome, cx);
                 true
             }
-            ConfirmKeyAction::Confirm => {
-                self.pending_confirm = None;
-                match confirm {
-                    PendingConfirm::Delete(targets) => {
-                        self.run_operation(FileOperation::Delete { targets }, cx);
-                    }
-                }
-                true
-            }
-            ConfirmKeyAction::Consume => true,
-            ConfirmKeyAction::Ignore => false,
+            None => false,
         }
     }
 
