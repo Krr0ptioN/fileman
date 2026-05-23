@@ -88,18 +88,6 @@ impl FileTarget {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum ClipboardKind {
-    Copy,
-    Move,
-}
-
-#[derive(Clone)]
-pub struct ClipboardOp {
-    pub kind: ClipboardKind,
-    pub targets: Vec<FileTarget>,
-}
-
 pub enum InputMode {
     Normal,
     Rename { target: FileTarget, input: String },
@@ -108,28 +96,6 @@ pub enum InputMode {
 #[derive(Clone)]
 pub enum PendingConfirm {
     Delete(Vec<FileTarget>),
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum PaneMode {
-    Dual,
-    Single,
-}
-
-impl PaneMode {
-    pub fn toggle(self) -> Self {
-        match self {
-            Self::Dual => Self::Single,
-            Self::Single => Self::Dual,
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Dual => "dual",
-            Self::Single => "single",
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

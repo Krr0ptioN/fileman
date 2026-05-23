@@ -1,8 +1,8 @@
 use std::{fs, path::Path};
 
-use crate::core;
+use crate::{core, features::clipboard::ClipboardKind};
 
-use super::state::{ClipboardKind, FileTarget};
+use super::state::FileTarget;
 
 pub enum FileOperation {
     Paste {
