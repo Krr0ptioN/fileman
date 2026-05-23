@@ -1,84 +1,85 @@
-use gpui::{InteractiveElement, IntoElement, ParentElement, Styled, div, px};
+use gpui::{
+    App, InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled, Window, div, px,
+};
 use gpui_component::h_flex;
 
-use super::{
-    badges::{executable_badge, intent_badge},
-    icons::row_icon,
-};
+use super::row_content::FileRowContent;
 use crate::features::file_browser::{
-    rows::{FileRow, RowIntent, kind_label},
+    rows::{FileRow, RowIntent},
     tokens,
 };
 
-pub(crate) fn render_row(
+#[derive(IntoElement)]
+pub(crate) struct FileRowItem {
     ix: usize,
     row: FileRow,
     selected: bool,
     active: bool,
     intent: RowIntent,
-) -> impl IntoElement {
-    let row_bg = if selected && active {
-        tokens::ROW_SELECTED_ACTIVE
-    } else if selected {
-        tokens::ROW_SELECTED_INACTIVE
-    } else if intent != RowIntent::None {
-        intent_bg(intent)
-    } else {
-        tokens::BG_PANEL
-    };
-    let border = if selected && active {
-        tokens::ROW_SELECTED_ACTIVE_BORDER
-    } else if selected {
-        tokens::ROW_SELECTED_INACTIVE_BORDER
-    } else {
-        tokens::ROW_BORDER_CLEAR
-    };
+}
 
-    h_flex()
-        .id(("file-row", ix))
-        .w_full()
-        .h(px(32.0))
-        .px_3()
-        .items_center()
-        .justify_between()
-        .bg(row_bg)
-        .border_1()
-        .border_color(border)
-        .rounded(px(if selected { 7.0 } else { 0.0 }))
-        .hover(|style| style.bg(tokens::ROW_HOVER))
-        .child(
-            h_flex()
-                .items_center()
-                .gap_2()
-                .min_w(px(0.0))
-                .flex_1()
-                .child(intent_badge(intent))
-                .child(row_icon(row.kind))
-                .child(executable_badge(row.is_executable))
-                .child(
-                    div()
-                        .min_w(px(0.0))
-                        .text_color(if selected {
-                            tokens::TEXT_PRIMARY
-                        } else {
-                            tokens::TEXT_SECONDARY
-                        })
-                        .child(row.name),
-                )
-                .child(
-                    div()
-                        .text_size(px(11.0))
-                        .text_color(tokens::TEXT_MUTED)
-                        .child(kind_label(row.kind)),
-                ),
-        )
-        .child(
-            div()
-                .flex_shrink_0()
-                .text_size(px(12.0))
-                .text_color(tokens::TEXT_SECONDARY)
-                .child(row.detail),
-        )
+impl FileRowItem {
+    pub(crate) fn new(
+        ix: usize,
+        row: FileRow,
+        selected: bool,
+        active: bool,
+        intent: RowIntent,
+    ) -> Self {
+        Self {
+            ix,
+            row,
+            selected,
+            active,
+            intent,
+        }
+    }
+
+    fn bg(&self) -> gpui::Rgba {
+        match (self.selected, self.active, self.intent) {
+            (true, true, _) => tokens::ROW_SELECTED_ACTIVE,
+            (true, false, _) => tokens::ROW_SELECTED_INACTIVE,
+            (false, _, RowIntent::None) => tokens::BG_PANEL,
+            (false, _, intent) => intent_bg(intent),
+        }
+    }
+
+    fn border(&self) -> gpui::Rgba {
+        match (self.selected, self.active) {
+            (true, true) => tokens::ROW_SELECTED_ACTIVE_BORDER,
+            (true, false) => tokens::ROW_SELECTED_INACTIVE_BORDER,
+            (false, _) => tokens::ROW_BORDER_CLEAR,
+        }
+    }
+}
+
+impl RenderOnce for FileRowItem {
+    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+        h_flex()
+            .id(("file-row", self.ix))
+            .w_full()
+            .h(px(32.0))
+            .px_3()
+            .items_center()
+            .justify_between()
+            .bg(self.bg())
+            .border_1()
+            .border_color(self.border())
+            .rounded(px(if self.selected { 7.0 } else { 0.0 }))
+            .hover(|style| style.bg(tokens::ROW_HOVER))
+            .child(FileRowContent::new(
+                self.row.clone(),
+                self.selected,
+                self.intent,
+            ))
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .text_size(px(12.0))
+                    .text_color(tokens::TEXT_SECONDARY)
+                    .child(self.row.detail),
+            )
+    }
 }
 
 fn intent_bg(intent: RowIntent) -> gpui::Rgba {

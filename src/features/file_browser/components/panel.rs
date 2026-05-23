@@ -1,84 +1,95 @@
 use std::{collections::HashSet, path::PathBuf};
 
-use gpui::{IntoElement, ParentElement, Styled, div, px, uniform_list};
+use gpui::{App, IntoElement, ParentElement, RenderOnce, Styled, Window, div, px, uniform_list};
 use gpui_component::v_flex;
 
-use super::{header::render_panel_header, row::render_row};
-use crate::features::file_browser::{
-    rows::row_intent,
-    state::{BrowserPanel, ClipboardKind, ClipboardOp, PanelSide, PendingConfirm},
-    tokens,
+use super::{header::PanelHeader, row::FileRowItem};
+use crate::features::{
+    clipboard::{ClipboardKind, target_paths},
+    file_browser::{
+        rows::row_intent,
+        state::{BrowserPanel, PanelSide, PendingConfirm},
+        tokens,
+    },
 };
 
-pub fn render_panel(
-    panel: &BrowserPanel,
+#[derive(IntoElement)]
+pub struct FilePanel {
+    panel: BrowserPanel,
     active: bool,
-    clipboard: Option<&ClipboardOp>,
-    pending_confirm: Option<&PendingConfirm>,
-) -> impl IntoElement + use<> {
-    let rows = panel.rows.clone();
-    let marked = panel.marked.clone();
-    let copy_targets = clipboard_targets(clipboard, ClipboardKind::Copy);
-    let move_targets = clipboard_targets(clipboard, ClipboardKind::Move);
-    let delete_targets = delete_targets(pending_confirm);
-    let selected_index = panel.selected_index;
-    let row_count = rows.len();
-    let scroll_handle = panel.scroll_handle.clone();
-    let list_id = match panel.side {
-        PanelSide::Left => "left-rows",
-        PanelSide::Right => "right-rows",
-    };
-
-    v_flex()
-        .flex_1()
-        .min_w(px(0.0))
-        .h_full()
-        .bg(tokens::BG_PANEL)
-        .border_1()
-        .border_color(if active {
-            tokens::BORDER_FOCUS
-        } else {
-            tokens::BORDER_SUBTLE
-        })
-        .rounded(px(6.0))
-        .overflow_hidden()
-        .child(render_panel_header(panel, active))
-        .child(
-            div().flex_grow().p_1().child(
-                uniform_list(list_id, row_count, move |range, _, _| {
-                    range
-                        .map(|ix| {
-                            let row = rows[ix].clone();
-                            let is_marked = marked.contains(&row.path);
-                            let intent = row_intent(
-                                &row.path,
-                                is_marked,
-                                &copy_targets,
-                                &move_targets,
-                                &delete_targets,
-                            );
-                            render_row(ix, row, ix == selected_index, active, intent)
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .track_scroll(scroll_handle)
-                .h_full(),
-            ),
-        )
+    pending_confirm: Option<PendingConfirm>,
 }
 
-fn clipboard_targets(clipboard: Option<&ClipboardOp>, kind: ClipboardKind) -> HashSet<PathBuf> {
-    let Some(clipboard) = clipboard else {
-        return HashSet::new();
-    };
-    if clipboard.kind != kind {
-        return HashSet::new();
+impl FilePanel {
+    pub fn new(
+        panel: &BrowserPanel,
+        active: bool,
+        pending_confirm: Option<&PendingConfirm>,
+    ) -> Self {
+        Self {
+            panel: panel.clone(),
+            active,
+            pending_confirm: pending_confirm.cloned(),
+        }
     }
-    clipboard
-        .targets
-        .iter()
-        .map(|target| target.path.clone())
-        .collect()
+}
+
+impl RenderOnce for FilePanel {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        let rows = self.panel.rows.clone();
+        let marked = self.panel.marked.clone();
+        let copy_targets = target_paths(cx, ClipboardKind::Copy);
+        let move_targets = target_paths(cx, ClipboardKind::Move);
+        let delete_targets = delete_targets(self.pending_confirm.as_ref());
+        let selected_index = self.panel.selected_index;
+        let row_count = rows.len();
+        let scroll_handle = self.panel.scroll_handle.clone();
+        let list_id = list_id(self.panel.side);
+
+        v_flex()
+            .flex_1()
+            .min_w(px(0.0))
+            .h_full()
+            .bg(tokens::BG_PANEL)
+            .border_1()
+            .border_color(if self.active {
+                tokens::BORDER_FOCUS
+            } else {
+                tokens::BORDER_SUBTLE
+            })
+            .rounded(px(6.0))
+            .overflow_hidden()
+            .child(PanelHeader::new(&self.panel, self.active))
+            .child(
+                div().flex_grow().p_1().child(
+                    uniform_list(list_id, row_count, move |range, _, _| {
+                        range
+                            .map(|ix| {
+                                let row = rows[ix].clone();
+                                let is_marked = marked.contains(&row.path);
+                                let intent = row_intent(
+                                    &row.path,
+                                    is_marked,
+                                    &copy_targets,
+                                    &move_targets,
+                                    &delete_targets,
+                                );
+                                FileRowItem::new(ix, row, ix == selected_index, self.active, intent)
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .track_scroll(scroll_handle)
+                    .h_full(),
+                ),
+            )
+    }
+}
+
+fn list_id(side: PanelSide) -> &'static str {
+    match side {
+        PanelSide::Left => "left-rows",
+        PanelSide::Right => "right-rows",
+    }
 }
 
 fn delete_targets(pending_confirm: Option<&PendingConfirm>) -> HashSet<PathBuf> {
