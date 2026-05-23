@@ -1,13 +1,35 @@
 use std::path::{Path, PathBuf};
 
-use super::state::BrowserPanel;
+use super::{BrowserCommandEffect, BrowserCommandOutcome, state::BrowserPanel};
 
 pub enum PanelNavigation {
     Load {
         path: PathBuf,
         prefer_name: Option<String>,
     },
+    OpenWithSystem {
+        path: PathBuf,
+        name: String,
+    },
     Status(String),
+}
+
+impl PanelNavigation {
+    pub fn into_outcome(self) -> BrowserCommandOutcome {
+        match self {
+            Self::Load { path, prefer_name } => {
+                BrowserCommandOutcome::effect(BrowserCommandEffect::LoadActive {
+                    path,
+                    prefer_name,
+                })
+            }
+            Self::OpenWithSystem { path, name } => BrowserCommandOutcome::status_effect(
+                format!("opening {name}"),
+                BrowserCommandEffect::OpenWithSystem(path),
+            ),
+            Self::Status(status) => BrowserCommandOutcome::status(status),
+        }
+    }
 }
 
 pub fn parent_navigation(panel: &BrowserPanel) -> PanelNavigation {
@@ -30,12 +52,15 @@ pub fn selected_navigation(panel: &BrowserPanel) -> PanelNavigation {
     };
 
     match row.is_dir {
-        false => PanelNavigation::Status(format!("selected {}", row.name)),
         true => PanelNavigation::Load {
             path: row.path.clone(),
             prefer_name: (row.name == "..")
                 .then(|| panel.path.file_name()?.to_str().map(str::to_string))
                 .flatten(),
+        },
+        false => PanelNavigation::OpenWithSystem {
+            path: row.path.clone(),
+            name: row.name.clone(),
         },
     }
 }

@@ -8,6 +8,7 @@ pub enum BrowserCommandEffect {
         path: std::path::PathBuf,
         prefer_name: Option<String>,
     },
+    OpenWithSystem(std::path::PathBuf),
     Clipboard(ClipboardEffect),
     RunOperation(FileOperation),
     TogglePaneMode,

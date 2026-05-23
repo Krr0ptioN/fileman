@@ -43,10 +43,8 @@ fn execute_ready_command(
             state.active_panel_mut().select_line(line);
             BrowserCommandOutcome::effect(BrowserCommandEffect::None)
         }
-        BrowserCommand::OpenParent => navigation_outcome(parent_navigation(state.active_panel())),
-        BrowserCommand::OpenSelected => {
-            navigation_outcome(selected_navigation(state.active_panel()))
-        }
+        BrowserCommand::OpenParent => parent_navigation(state.active_panel()).into_outcome(),
+        BrowserCommand::OpenSelected => selected_navigation(state.active_panel()).into_outcome(),
         BrowserCommand::ToggleMark(count) => {
             let marked = toggle_marked(state.active_panel_mut(), count);
             BrowserCommandOutcome::status(format!("{marked} marked"))
@@ -105,13 +103,4 @@ fn clipboard_outcome(
         kind,
         targets: effective_targets(state.active_panel()),
     }))
-}
-
-fn navigation_outcome(navigation: super::PanelNavigation) -> BrowserCommandOutcome {
-    match navigation {
-        super::PanelNavigation::Load { path, prefer_name } => {
-            BrowserCommandOutcome::effect(BrowserCommandEffect::LoadActive { path, prefer_name })
-        }
-        super::PanelNavigation::Status(status) => BrowserCommandOutcome::status(status),
-    }
 }
