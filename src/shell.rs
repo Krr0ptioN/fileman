@@ -1,36 +1,42 @@
 use std::{
     collections::HashSet,
-    fs,
     path::{Path, PathBuf},
 };
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    App, AppContext, Application, Bounds, ClipboardItem, Context, FocusHandle, InteractiveElement,
-    IntoElement, KeyDownEvent, ParentElement, Render, Styled, Window, WindowBounds, WindowOptions,
+    App, AppContext, Application, Bounds, Context, FocusHandle, InteractiveElement, IntoElement,
+    KeyDownEvent, ParentElement, Render, Styled, UpdateGlobal, Window, WindowBounds, WindowOptions,
     px, size,
 };
-use gpui_component::{Root, h_flex, v_flex};
+use gpui_component::{Root, v_flex};
 
 use crate::core;
+use crate::features::clipboard::{
+    ClipboardKind, ClipboardState, PastePlan, copy_file_contents, copy_target_name,
+    copy_target_path, plan_paste, prepare_clipboard,
+};
 use crate::features::file_browser::tokens;
 use crate::features::file_browser::{
-    BrowserPanel, ClipboardKind, ClipboardOp, FileOperation, FileRow, FileTarget, FilemanAssets,
-    InputMode, PaneMode, PanelSide, PendingConfirm, delete_status, render_command_bar,
-    render_help_popup, render_leader_map, render_panel, render_title_bar, selection_status,
+    BrowserPanel, CommandBar, FileOperation, FileRow, FileTarget, FilemanAssets, HelpPopup,
+    InputMode, LeaderMap, PanelLayout, PanelSide, PendingConfirm, TitleBar, delete_status,
     toggle_targets,
 };
 use crate::features::keybind::{
-    BrowserCommand, HeldNavigation, HelpAction, KeybindArgs, KeybindRegistry,
-    command_char_from_key, file_manager_keybinds, help_action, navigation_input,
+    AppKeyHandler, BrowserCommand, BrowserCommandExecutor, BrowserVimInput, ConfirmKeyAction,
+    ControlAction, HeldNavigation, HelpAction, KeyCommandAction, KeybindArgs, KeybindRegistry,
+    RenameKeyAction, VimCommandState, VimCommandStep, apply_browser_vim_char, confirm_key_action,
+    control_action, file_manager_keybinds, handle_key_command, navigation_input, rename_key_action,
 };
-use crate::features::vim_keys::{VimCommandState, VimCommandStep};
+use crate::features::layout::LayoutState;
 
 pub fn run(start_path: Option<PathBuf>) {
     Application::new()
         .with_assets(FilemanAssets)
         .run(move |app: &mut App| {
             gpui_component::init(app);
+            app.set_global(ClipboardState::default());
+            app.set_global(LayoutState::default());
             let start_path = start_path.clone();
 
             let bounds = Bounds::centered(None, size(px(1180.0), px(720.0)), app);
@@ -60,10 +66,8 @@ pub struct FilemanShell {
     active: PanelSide,
     pub(crate) focus_handle: FocusHandle,
     vim_command: VimCommandState,
-    clipboard: Option<ClipboardOp>,
     input_mode: InputMode,
     pending_confirm: Option<PendingConfirm>,
-    pane_mode: PaneMode,
     held_navigation: HeldNavigation,
     keybinds: KeybindRegistry<BrowserCommand>,
     help_popup_open: bool,
@@ -82,37 +86,13 @@ impl FilemanShell {
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| PathBuf::from("."));
         let mut shell = Self {
-            primary: BrowserPanel {
-                side: PanelSide::Left,
-                title: "Primary",
-                path: start_path.clone(),
-                selected_index: 0,
-                rows: Vec::new(),
-                marked: HashSet::new(),
-                loading: false,
-                error: None,
-                load_generation: 0,
-                scroll_handle: Default::default(),
-            },
-            secondary: BrowserPanel {
-                side: PanelSide::Right,
-                title: "Secondary",
-                path: start_path.clone(),
-                selected_index: 0,
-                rows: Vec::new(),
-                marked: HashSet::new(),
-                loading: false,
-                error: None,
-                load_generation: 0,
-                scroll_handle: Default::default(),
-            },
+            primary: FilemanShell::panel_factory(&start_path, "Primary", PanelSide::Left),
+            secondary: FilemanShell::panel_factory(&start_path, "Secondary", PanelSide::Right),
             active: PanelSide::Left,
             focus_handle,
             vim_command: VimCommandState::default(),
-            clipboard: None,
             input_mode: InputMode::Normal,
             pending_confirm: None,
-            pane_mode: PaneMode::Single,
             held_navigation: HeldNavigation::default(),
             keybinds: file_manager_keybinds(),
             help_popup_open: false,
@@ -125,109 +105,37 @@ impl FilemanShell {
         shell
     }
 
+    #[inline]
+    fn panel_factory(start_path: &PathBuf, title: &'static str, side: PanelSide) -> BrowserPanel {
+        BrowserPanel {
+            side,
+            title,
+            path: start_path.clone(),
+            selected_index: 0,
+            rows: Vec::new(),
+            marked: HashSet::new(),
+            loading: false,
+            error: None,
+            load_generation: 0,
+            scroll_handle: Default::default(),
+        }
+    }
+
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if self.handle_key_command(event, cx) {
+        if self.dispatch_key_command(event, cx) {
             Self::consume_key_event(window, cx);
         }
     }
 
-    fn handle_key_command(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
-        if self.handle_modal_key(event, cx) || self.handle_control_key(event) {
-            self.held_navigation.reset();
-            return true;
-        }
-
-        if self.handle_cancel_key(event) {
-            self.held_navigation.reset();
-            return true;
-        }
-
-        if self.handle_help_key(event) {
-            self.held_navigation.reset();
-            return true;
-        }
-
-        if self.handle_leader_key(event, cx) {
-            self.held_navigation.reset();
-            return true;
-        }
-
-        if self.handle_navigation_key(event) {
-            return true;
-        }
-
-        self.handle_vim_key(event, cx)
-    }
-
-    fn handle_modal_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
-        self.handle_input_mode_key(event, cx) || self.handle_confirm_key(event, cx)
-    }
-
-    fn handle_help_key(&mut self, event: &KeyDownEvent) -> bool {
-        let Some(action) = help_action(event, self.help_popup_open) else {
-            return self.help_popup_open;
-        };
-
-        match action {
-            HelpAction::Open => {
-                self.vim_command.clear();
-                self.leader_map_open = false;
-                self.help_popup_open = true;
-                self.status = "help".to_string();
-            }
-            HelpAction::Close => {
-                self.help_popup_open = false;
-                self.status = "normal".to_string();
-            }
-        }
-        true
-    }
-
-    fn handle_cancel_key(&mut self, event: &KeyDownEvent) -> bool {
-        if event.is_held || event.keystroke.modifiers.modified() {
-            return false;
-        }
-        if event.keystroke.key.as_str() != "escape" {
-            return false;
-        }
-
-        self.vim_command.clear();
-        self.help_popup_open = false;
-        self.leader_map_open = false;
-        self.status = "normal".to_string();
-        true
-    }
-
-    fn handle_leader_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
-        if event.is_held || event.keystroke.modifiers.modified() || self.help_popup_open {
-            return self.leader_map_open;
-        }
-
-        match event.keystroke.key.as_str() {
-            ";" | "space" if self.vim_command.pending.is_empty() => {
-                self.leader_map_open = true;
-                self.status = "leader".to_string();
+    fn dispatch_key_command(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        match handle_key_command(self, event, cx) {
+            KeyCommandAction::HandledResetNavigation => {
+                self.held_navigation.reset();
                 true
             }
-            _ if self.leader_map_open => {
-                self.leader_map_open = false;
-                command_char_from_key(event).is_none_or(|ch| {
-                    self.apply_vim_char(ch, cx);
-                    true
-                })
-            }
-            _ => false,
+            KeyCommandAction::HandledKeepNavigation => true,
+            KeyCommandAction::Ignored => false,
         }
-    }
-
-    fn handle_vim_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
-        self.held_navigation.reset();
-        self.leader_map_open = false;
-        let Some(ch) = command_char_from_key(event) else {
-            return false;
-        };
-
-        self.apply_vim_char(ch, cx)
     }
 
     fn consume_key_event(window: &mut Window, cx: &mut Context<Self>) {
@@ -256,22 +164,18 @@ impl FilemanShell {
             return false;
         };
 
-        if event.is_held {
-            return true;
-        }
-
-        match event.keystroke.key.as_str() {
-            "escape" => {
+        match rename_key_action(event) {
+            RenameKeyAction::Cancel => {
                 self.input_mode = InputMode::Normal;
                 self.status = "rename cancelled".to_string();
-                return true;
+                true
             }
-            "backspace" => {
+            RenameKeyAction::Backspace => {
                 input.pop();
                 self.status = format!("rename: {input}");
-                return true;
+                true
             }
-            "enter" => {
+            RenameKeyAction::Submit => {
                 let target = target.clone();
                 let new_name = input.trim().to_string();
                 self.input_mode = InputMode::Normal;
@@ -280,33 +184,29 @@ impl FilemanShell {
                 } else {
                     self.run_operation(FileOperation::Rename { target, new_name }, cx);
                 }
-                return true;
+                true
             }
-            _ => {}
+            RenameKeyAction::Insert(ch) => {
+                input.push(ch);
+                self.status = format!("rename: {input}");
+                true
+            }
+            RenameKeyAction::Consume => true,
         }
-
-        if let Some(ch) = command_char_from_key(event) {
-            input.push(ch);
-            self.status = format!("rename: {input}");
-        }
-        true
     }
 
     fn handle_confirm_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
         let Some(confirm) = self.pending_confirm.clone() else {
             return false;
         };
-        if event.is_held {
-            return true;
-        }
 
-        match event.keystroke.key.as_str() {
-            "escape" | "n" => {
+        match confirm_key_action(event) {
+            ConfirmKeyAction::Cancel => {
                 self.pending_confirm = None;
                 self.status = "cancelled".to_string();
                 true
             }
-            "enter" | "y" => {
+            ConfirmKeyAction::Confirm => {
                 self.pending_confirm = None;
                 match confirm {
                     PendingConfirm::Delete(targets) => {
@@ -315,150 +215,19 @@ impl FilemanShell {
                 }
                 true
             }
-            _ => false,
+            ConfirmKeyAction::Consume => true,
+            ConfirmKeyAction::Ignore => false,
         }
     }
 
     fn handle_control_key(&mut self, event: &KeyDownEvent) -> bool {
-        if event.is_held {
-            return false;
-        }
-
-        let key = event.keystroke.key.as_str();
-        if key == "tab" {
-            self.switch_active_panel();
-            return true;
-        }
-
-        let modifiers = event.keystroke.modifiers;
-        if modifiers.control && !modifiers.alt && !modifiers.shift && !modifiers.platform {
-            match key {
-                "i" | "I" => {
-                    self.switch_active_panel();
-                    return true;
-                }
-                _ => {}
-            }
-        }
-
-        if modifiers.modified() {
-            return false;
-        }
-
-        match key {
-            "tab" => {
+        match control_action(event) {
+            Some(ControlAction::SwitchPanel) => {
                 self.switch_active_panel();
                 true
             }
-            _ => false,
+            None => false,
         }
-    }
-
-    fn apply_vim_char(&mut self, ch: char, cx: &mut Context<Self>) -> bool {
-        let keybinds = &self.keybinds;
-        match self
-            .vim_command
-            .push_with_prefixes(ch, |sequence| keybinds.is_prefix(sequence))
-        {
-            VimCommandStep::Ignored => false,
-            VimCommandStep::Pending => {
-                self.status = self
-                    .vim_command
-                    .display()
-                    .unwrap_or_else(|| "normal".to_string());
-                true
-            }
-            VimCommandStep::Execute {
-                sequence,
-                count,
-                explicit_count,
-                had_pending,
-            } => {
-                let handled =
-                    self.execute_vim_sequence(sequence.as_str(), count, explicit_count, cx);
-                if !handled && had_pending {
-                    return self.apply_vim_char(ch, cx);
-                }
-                handled
-            }
-        }
-    }
-
-    fn execute_vim_sequence(
-        &mut self,
-        sequence: &str,
-        count: usize,
-        explicit_count: bool,
-        cx: &mut Context<Self>,
-    ) -> bool {
-        let Some(command) = self.keybinds.command_for(
-            sequence,
-            KeybindArgs {
-                count,
-                explicit_count,
-            },
-        ) else {
-            return false;
-        };
-
-        if command.requires_rows() && self.active_panel().rows.is_empty() {
-            self.status = "empty".to_string();
-            return true;
-        }
-
-        match command {
-            BrowserCommand::Move(delta) | BrowserCommand::MovePage(delta) => {
-                self.active_panel_mut().select_relative(delta)
-            }
-            BrowserCommand::First => self.active_panel_mut().select_line(0),
-            BrowserCommand::Last => self.active_panel_mut().select_last(),
-            BrowserCommand::Line(line) => self.active_panel_mut().select_line(line),
-            BrowserCommand::OpenParent => return self.open_parent(cx),
-            BrowserCommand::OpenSelected => return self.open_selected(cx),
-            BrowserCommand::ToggleMark(count) => {
-                let marked = self.toggle_marked(count);
-                self.status = format!("{marked} marked");
-            }
-            BrowserCommand::ToggleAllMarks => {
-                self.status = self.toggle_all_marks();
-            }
-            BrowserCommand::ClearMarks => {
-                self.active_panel_mut().marked.clear();
-                self.status = "marks cleared".to_string();
-            }
-            BrowserCommand::Copy => return self.prepare_clipboard(ClipboardKind::Copy),
-            BrowserCommand::CopyPath => return self.copy_target_path(cx),
-            BrowserCommand::CopyName => return self.copy_target_name(cx),
-            BrowserCommand::CopyFileContents => return self.copy_file_contents(cx),
-            BrowserCommand::MoveSelection => return self.prepare_clipboard(ClipboardKind::Move),
-            BrowserCommand::Paste => return self.paste_clipboard(cx),
-            BrowserCommand::Delete => return self.prepare_delete(),
-            BrowserCommand::Rename => return self.start_rename(),
-            BrowserCommand::TogglePaneMode => {
-                self.pane_mode = self.pane_mode.toggle();
-                self.status = format!("{} pane mode", self.pane_mode.label());
-            }
-            BrowserCommand::SwitchPanel => {
-                self.switch_active_panel();
-                return true;
-            }
-            BrowserCommand::OpenHelp => {
-                self.help_popup_open = true;
-                self.leader_map_open = false;
-                self.status = "help".to_string();
-                return true;
-            }
-            BrowserCommand::Reload => {
-                let path = self.active_panel().path.clone();
-                self.load_panel(self.active, path, None, cx);
-            }
-        }
-
-        if !matches!(sequence, "h" | "l") {
-            let selected = self.active_panel().selected_name();
-            self.status = format!("{sequence} -> {selected}");
-        }
-        true
     }
 
     fn switch_active_panel(&mut self) {
@@ -521,95 +290,29 @@ impl FilemanShell {
         format!("{} marked", panel.marked.len())
     }
 
-    fn prepare_clipboard(&mut self, kind: ClipboardKind) -> bool {
-        let targets = self.effective_targets();
-        if targets.is_empty() {
-            self.status = "nothing selected".to_string();
-            return true;
-        }
-
-        let label = match kind {
-            ClipboardKind::Copy => "copy",
-            ClipboardKind::Move => "move",
-        };
-
-        let mut clear_clipboard = false;
-        match &mut self.clipboard {
-            Some(clipboard) if clipboard.kind == kind => {
-                self.status =
-                    selection_status(label, toggle_targets(&mut clipboard.targets, &targets));
-                clear_clipboard = clipboard.targets.is_empty();
-            }
-            _ => {
-                self.status = format!("{label} {} item(s)", targets.len());
-                self.clipboard = Some(ClipboardOp { kind, targets });
-            }
-        }
-        if clear_clipboard {
-            self.clipboard = None;
-        }
-        true
-    }
-
-    fn copy_target_path(&mut self, cx: &mut Context<Self>) -> bool {
-        match self.selected_target() {
-            Some(target) => {
-                let text = target.path.to_string_lossy().to_string();
-                cx.write_to_clipboard(ClipboardItem::new_string(text));
-                self.status = format!("copied path {}", target.name);
-            }
-            None => self.status = "nothing selected".to_string(),
-        }
-        true
-    }
-
-    fn copy_target_name(&mut self, cx: &mut Context<Self>) -> bool {
-        match self.selected_target() {
-            Some(target) => {
-                cx.write_to_clipboard(ClipboardItem::new_string(target.name.clone()));
-                self.status = format!("copied name {}", target.name);
-            }
-            None => self.status = "nothing selected".to_string(),
-        }
-        true
-    }
-
-    fn copy_file_contents(&mut self, cx: &mut Context<Self>) -> bool {
-        match self.selected_target() {
-            Some(target) if target.is_dir => {
-                self.status = "cannot copy directory contents".to_string();
-            }
-            Some(target) => match fs::read_to_string(&target.path) {
-                Ok(text) => {
-                    cx.write_to_clipboard(ClipboardItem::new_string(text));
-                    self.status = format!("copied contents {}", target.name);
-                }
-                Err(error) => {
-                    self.status = format!("copy contents failed: {error}");
-                }
-            },
-            None => self.status = "nothing selected".to_string(),
-        }
-        true
-    }
-
     fn paste_clipboard(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(clipboard) = self.clipboard.clone() else {
-            self.status = "clipboard empty".to_string();
-            return true;
-        };
-
         let dst_dir = self.active_panel().path.clone();
-        self.run_operation(
-            FileOperation::Paste {
-                kind: clipboard.kind,
-                targets: clipboard.targets,
+        let plan = ClipboardState::update_global(cx, |clipboard, _| plan_paste(clipboard, dst_dir));
+        match plan {
+            PastePlan::Empty => self.status = "clipboard empty".to_string(),
+            PastePlan::Ready {
+                kind,
+                targets,
                 dst_dir,
-            },
-            cx,
-        );
-        if matches!(clipboard.kind, ClipboardKind::Move) {
-            self.clipboard = None;
+                clear_after_paste,
+            } => {
+                self.run_operation(
+                    FileOperation::Paste {
+                        kind,
+                        targets,
+                        dst_dir,
+                    },
+                    cx,
+                );
+                if clear_after_paste {
+                    ClipboardState::update_global(cx, |clipboard, _| clipboard.clear());
+                }
+            }
         }
         true
     }
@@ -833,7 +536,7 @@ impl FilemanShell {
         }
     }
 
-    fn command_mode_label(&self) -> String {
+    fn command_mode_label(&self, cx: &Context<Self>) -> String {
         match (&self.input_mode, &self.pending_confirm) {
             (InputMode::Rename { .. }, _) => "rename".to_string(),
             (_, Some(_)) => "confirm".to_string(),
@@ -842,7 +545,7 @@ impl FilemanShell {
             _ => self
                 .vim_command
                 .display()
-                .unwrap_or_else(|| self.pane_mode.label().to_string()),
+                .unwrap_or_else(|| cx.global::<LayoutState>().pane_mode().label().to_string()),
         }
     }
 
@@ -867,77 +570,218 @@ impl FilemanShell {
     }
 }
 
-impl Render for FilemanShell {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let viewport = window.viewport_size();
-        let width = f32::from(viewport.width);
-        let height = f32::from(viewport.height).max(1.0);
-        let aspect = width / height;
-        let narrow = width < 920.0 || aspect < 1.15;
-        let single = self.pane_mode == PaneMode::Single;
+impl BrowserCommandExecutor<Context<'_, FilemanShell>> for FilemanShell {
+    fn command_for(&self, sequence: &str, args: KeybindArgs) -> Option<BrowserCommand> {
+        self.keybinds.command_for(sequence, args)
+    }
 
-        let panel_region = if single {
-            match self.active {
-                PanelSide::Left => v_flex()
-                    .flex_grow()
-                    .gap_2()
-                    .p_2()
-                    .child(render_panel(
-                        &self.primary,
-                        true,
-                        self.clipboard.as_ref(),
-                        self.pending_confirm.as_ref(),
-                    ))
-                    .into_any_element(),
-                PanelSide::Right => v_flex()
-                    .flex_grow()
-                    .gap_2()
-                    .p_2()
-                    .child(render_panel(
-                        &self.secondary,
-                        true,
-                        self.clipboard.as_ref(),
-                        self.pending_confirm.as_ref(),
-                    ))
-                    .into_any_element(),
+    fn has_active_rows(&self) -> bool {
+        !self.active_panel().rows.is_empty()
+    }
+
+    fn selected_name(&self) -> String {
+        self.active_panel().selected_name().to_string()
+    }
+
+    fn set_status(&mut self, status: String) {
+        self.status = status;
+    }
+
+    fn select_relative(&mut self, delta: isize) {
+        self.active_panel_mut().select_relative(delta);
+    }
+
+    fn select_first(&mut self) {
+        self.active_panel_mut().select_line(0);
+    }
+
+    fn select_last(&mut self) {
+        self.active_panel_mut().select_last();
+    }
+
+    fn select_line(&mut self, line: usize) {
+        self.active_panel_mut().select_line(line);
+    }
+
+    fn open_parent(&mut self, cx: &mut Context<Self>) -> bool {
+        FilemanShell::open_parent(self, cx)
+    }
+
+    fn open_selected(&mut self, cx: &mut Context<Self>) -> bool {
+        FilemanShell::open_selected(self, cx)
+    }
+
+    fn toggle_marked(&mut self, count: usize) -> usize {
+        FilemanShell::toggle_marked(self, count)
+    }
+
+    fn toggle_all_marks(&mut self) -> String {
+        FilemanShell::toggle_all_marks(self)
+    }
+
+    fn clear_marks(&mut self) {
+        self.active_panel_mut().marked.clear();
+    }
+
+    fn prepare_copy(&mut self, cx: &mut Context<Self>) -> bool {
+        let targets = self.effective_targets();
+        self.status = ClipboardState::update_global(cx, |clipboard, _| {
+            prepare_clipboard(clipboard, ClipboardKind::Copy, targets)
+        });
+        true
+    }
+
+    fn copy_path(&mut self, cx: &mut Context<Self>) -> bool {
+        self.status = copy_target_path(self.selected_target(), cx);
+        true
+    }
+
+    fn copy_name(&mut self, cx: &mut Context<Self>) -> bool {
+        self.status = copy_target_name(self.selected_target(), cx);
+        true
+    }
+
+    fn copy_file_contents(&mut self, cx: &mut Context<Self>) -> bool {
+        self.status = copy_file_contents(self.selected_target(), cx);
+        true
+    }
+
+    fn prepare_move(&mut self, cx: &mut Context<Self>) -> bool {
+        let targets = self.effective_targets();
+        self.status = ClipboardState::update_global(cx, |clipboard, _| {
+            prepare_clipboard(clipboard, ClipboardKind::Move, targets)
+        });
+        true
+    }
+
+    fn paste(&mut self, cx: &mut Context<Self>) -> bool {
+        self.paste_clipboard(cx)
+    }
+
+    fn prepare_delete(&mut self) -> bool {
+        FilemanShell::prepare_delete(self)
+    }
+
+    fn start_rename(&mut self) -> bool {
+        FilemanShell::start_rename(self)
+    }
+
+    fn toggle_pane_mode(&mut self, cx: &mut Context<Self>) {
+        let pane_mode = LayoutState::update_global(cx, |layout, _| layout.toggle_pane_mode());
+        self.status = format!("{} pane mode", pane_mode.label());
+    }
+
+    fn switch_panel(&mut self) -> bool {
+        self.switch_active_panel();
+        true
+    }
+
+    fn open_help(&mut self) -> bool {
+        self.help_popup_open = true;
+        self.leader_map_open = false;
+        self.status = "help".to_string();
+        true
+    }
+
+    fn reload(&mut self, cx: &mut Context<Self>) {
+        let path = self.active_panel().path.clone();
+        self.load_panel(self.active, path, None, cx);
+    }
+}
+
+impl BrowserVimInput<Context<'_, FilemanShell>> for FilemanShell {
+    fn push_command_char(&mut self, ch: char) -> VimCommandStep {
+        let keybinds = &self.keybinds;
+        self.vim_command
+            .push_with_prefixes(ch, |sequence| keybinds.is_prefix(sequence))
+    }
+
+    fn show_pending_command(&mut self) {
+        self.status = self
+            .vim_command
+            .display()
+            .unwrap_or_else(|| "normal".to_string());
+    }
+}
+
+impl AppKeyHandler<Context<'_, FilemanShell>> for FilemanShell {
+    fn modal_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        self.handle_input_mode_key(event, cx) || self.handle_confirm_key(event, cx)
+    }
+
+    fn control_key(&mut self, event: &KeyDownEvent) -> bool {
+        self.handle_control_key(event)
+    }
+
+    fn cancel_key(&mut self, event: &KeyDownEvent) -> bool {
+        if event.is_held || event.keystroke.modifiers.modified() {
+            return false;
+        }
+        if event.keystroke.key.as_str() != "escape" {
+            return false;
+        }
+
+        self.vim_command.clear();
+        self.help_popup_open = false;
+        self.leader_map_open = false;
+        self.status = "normal".to_string();
+        true
+    }
+
+    fn help_key(&mut self, action: HelpAction) -> bool {
+        match action {
+            HelpAction::Open => {
+                self.vim_command.clear();
+                self.leader_map_open = false;
+                self.help_popup_open = true;
+                self.status = "help".to_string();
             }
-        } else if narrow {
-            v_flex()
-                .flex_grow()
-                .gap_2()
-                .p_2()
-                .child(render_panel(
-                    &self.primary,
-                    self.active == PanelSide::Left,
-                    self.clipboard.as_ref(),
-                    self.pending_confirm.as_ref(),
-                ))
-                .child(render_panel(
-                    &self.secondary,
-                    self.active == PanelSide::Right,
-                    self.clipboard.as_ref(),
-                    self.pending_confirm.as_ref(),
-                ))
-                .into_any_element()
-        } else {
-            h_flex()
-                .flex_grow()
-                .gap_2()
-                .p_2()
-                .child(render_panel(
-                    &self.primary,
-                    self.active == PanelSide::Left,
-                    self.clipboard.as_ref(),
-                    self.pending_confirm.as_ref(),
-                ))
-                .child(render_panel(
-                    &self.secondary,
-                    self.active == PanelSide::Right,
-                    self.clipboard.as_ref(),
-                    self.pending_confirm.as_ref(),
-                ))
-                .into_any_element()
-        };
+            HelpAction::Close => {
+                self.help_popup_open = false;
+                self.status = "normal".to_string();
+            }
+        }
+        true
+    }
+
+    fn help_open(&self) -> bool {
+        self.help_popup_open
+    }
+
+    fn leader_open(&self) -> bool {
+        self.leader_map_open
+    }
+
+    fn open_leader(&mut self) {
+        self.leader_map_open = true;
+        self.status = "leader".to_string();
+    }
+
+    fn close_leader(&mut self) {
+        self.leader_map_open = false;
+    }
+
+    fn has_pending_vim(&self) -> bool {
+        !self.vim_command.pending.is_empty()
+    }
+
+    fn navigation_key(&mut self, event: &KeyDownEvent) -> bool {
+        self.handle_navigation_key(event)
+    }
+
+    fn vim_char(&mut self, ch: char, cx: &mut Context<Self>) -> bool {
+        apply_browser_vim_char(self, ch, cx)
+    }
+}
+
+impl Render for FilemanShell {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let panel_region = PanelLayout::new(
+            &self.primary,
+            &self.secondary,
+            self.active,
+            self.pending_confirm.as_ref(),
+        );
         let leader_prefix = match self.leader_map_open {
             true => String::new(),
             false => self.vim_command.pending.clone(),
@@ -961,17 +805,17 @@ impl Render for FilemanShell {
             .bg(tokens::BG_CANVAS)
             .text_color(tokens::TEXT_PRIMARY)
             .font_family("Berkeley Mono")
-            .child(render_title_bar())
+            .child(TitleBar)
             .child(panel_region)
-            .child(render_command_bar(
-                self.command_mode_label(),
+            .child(CommandBar::new(
+                self.command_mode_label(cx),
                 self.status.as_str(),
             ))
             .when(show_leader_map, |this| {
-                this.child(render_leader_map(leader_prefix, leader_entries))
+                this.child(LeaderMap::new(leader_prefix, leader_entries))
             })
             .when(self.help_popup_open, |this| {
-                this.child(render_help_popup(self.keybinds.help_groups()))
+                this.child(HelpPopup::new(self.keybinds.help_groups()))
             })
     }
 }
