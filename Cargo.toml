@@ -43,6 +43,7 @@ toml = "0.8"
 egui = "0.34"
 gpui = "0.2.2"
 gpui-component = "0.5.1"
+arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"] }
 syntect = "5"
 memchr = "2.7"
 ssh2 = "0.9"

@@ -29,6 +29,7 @@ fn maps_line_navigation() {
 fn maps_operations() {
     assert_eq!(command("yy", 1, false), Some(BrowserCommand::Copy));
     assert_eq!(command("yp", 1, false), Some(BrowserCommand::CopyPath));
+    assert_eq!(command("yf", 1, false), Some(BrowserCommand::CopyFiles));
     assert_eq!(command("dD", 1, false), Some(BrowserCommand::Delete));
     assert_eq!(command("zz", 1, false), None);
 }
@@ -37,7 +38,7 @@ fn maps_operations() {
 fn derives_leader_entries_from_registered_commands() {
     let registry = file_manager_keybinds();
     assert!(registry.is_prefix("y"));
-    assert_eq!(registry.leader_continuations("y").len(), 4);
+    assert_eq!(registry.leader_continuations("y").len(), 5);
     assert!(
         registry
             .leader_continuations("")

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use gpui::{Context, UpdateGlobal};
 
 use super::{
-    copy::{copy_file_contents, copy_target_name, copy_target_path},
+    copy::{copy_file_contents, copy_files, copy_target_name, copy_target_path},
     paste::{PastePlan, plan_paste},
     selection::prepare_clipboard,
     types::{ClipboardKind, ClipboardState},
@@ -18,6 +18,7 @@ pub enum ClipboardEffect {
     CopyPath(Option<FileTarget>),
     CopyName(Option<FileTarget>),
     CopyFileContents(Option<FileTarget>),
+    CopyFiles(Vec<FileTarget>),
     PasteInto(PathBuf),
 }
 
@@ -56,6 +57,10 @@ pub fn apply_clipboard_effect<T>(
         },
         ClipboardEffect::CopyFileContents(target) => ClipboardEffectOutcome {
             status: copy_file_contents(target, cx),
+            paste: None,
+        },
+        ClipboardEffect::CopyFiles(targets) => ClipboardEffectOutcome {
+            status: copy_files(targets, cx),
             paste: None,
         },
         ClipboardEffect::PasteInto(dst_dir) => paste_into(dst_dir, cx),

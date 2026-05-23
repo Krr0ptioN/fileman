@@ -14,6 +14,7 @@ pub enum BrowserCommand {
     CopyPath,
     CopyName,
     CopyFileContents,
+    CopyFiles,
     MoveSelection,
     Paste,
     Delete,

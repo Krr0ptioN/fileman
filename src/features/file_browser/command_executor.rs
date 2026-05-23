@@ -71,6 +71,11 @@ fn execute_ready_command(
                 ClipboardEffect::CopyFileContents(selected_target(state.active_panel())),
             ))
         }
+        BrowserCommand::CopyFiles => {
+            BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
+                ClipboardEffect::CopyFiles(effective_targets(state.active_panel())),
+            ))
+        }
         BrowserCommand::Paste => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
             ClipboardEffect::PasteInto(state.active_panel().path.clone()),
         )),

@@ -15,6 +15,9 @@ pub(super) fn register(registry: &mut Registry) {
     super::bind(registry, "yn", "copy name", "Operations", false, |_| {
         BrowserCommand::CopyName
     });
+    super::bind(registry, "yf", "copy file", "Operations", false, |_| {
+        BrowserCommand::CopyFiles
+    });
     super::bind(
         registry,
         "yc",
