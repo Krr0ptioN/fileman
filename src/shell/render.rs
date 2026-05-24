@@ -14,30 +14,34 @@ use crate::features::{
 impl Render for FilemanShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let panel_region = match self.preview.as_ref() {
-            Some(preview) => match LayoutVariant::resolve(window.viewport_size(), PaneMode::Dual) {
-                LayoutVariant::SingleActive | LayoutVariant::DualStacked => v_flex()
-                    .flex_grow()
-                    .gap_2()
-                    .p_2()
-                    .child(FilePanel::new(
-                        self.active_panel(),
-                        true,
-                        self.pending_confirm.as_ref(),
-                    ))
-                    .child(PreviewPanel::new(preview))
-                    .into_any_element(),
-                LayoutVariant::DualSplit => h_flex()
-                    .flex_grow()
-                    .gap_2()
-                    .p_2()
-                    .child(FilePanel::new(
-                        self.active_panel(),
-                        true,
-                        self.pending_confirm.as_ref(),
-                    ))
-                    .child(PreviewPanel::new(preview))
-                    .into_any_element(),
-            },
+            Some(preview) => {
+                let preview_active = self.preview_pane_focused();
+                let browser_active = !preview_active;
+                match LayoutVariant::resolve(window.viewport_size(), PaneMode::Dual) {
+                    LayoutVariant::SingleActive | LayoutVariant::DualStacked => v_flex()
+                        .flex_grow()
+                        .gap_2()
+                        .p_2()
+                        .child(FilePanel::new(
+                            self.active_panel(),
+                            browser_active,
+                            self.pending_confirm.as_ref(),
+                        ))
+                        .child(PreviewPanel::new(preview, preview_active))
+                        .into_any_element(),
+                    LayoutVariant::DualSplit => h_flex()
+                        .flex_grow()
+                        .gap_2()
+                        .p_2()
+                        .child(FilePanel::new(
+                            self.active_panel(),
+                            browser_active,
+                            self.pending_confirm.as_ref(),
+                        ))
+                        .child(PreviewPanel::new(preview, preview_active))
+                        .into_any_element(),
+                }
+            }
             None => PanelLayout::new(
                 &self.primary,
                 &self.secondary,

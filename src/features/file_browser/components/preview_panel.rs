@@ -11,12 +11,14 @@ use crate::features::file_browser::{
 #[derive(IntoElement)]
 pub struct PreviewPanel {
     preview: PreviewState,
+    active: bool,
 }
 
 impl PreviewPanel {
-    pub fn new(preview: &PreviewState) -> Self {
+    pub fn new(preview: &PreviewState, active: bool) -> Self {
         Self {
             preview: preview.clone(),
+            active,
         }
     }
 }
@@ -29,7 +31,11 @@ impl RenderOnce for PreviewPanel {
             .h_full()
             .bg(tokens::BG_PANEL)
             .border_1()
-            .border_color(tokens::BORDER_SUBTLE)
+            .border_color(if self.active {
+                tokens::BORDER_FOCUS
+            } else {
+                tokens::BORDER_SUBTLE
+            })
             .rounded(px(6.0))
             .overflow_hidden()
             .child(preview_header(&self.preview))
