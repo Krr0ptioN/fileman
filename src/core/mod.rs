@@ -24,7 +24,7 @@ pub use model::{
     SearchMode, SearchProgress, SearchRequest, SearchResult, SortMode,
 };
 pub use preview::{
-    format_preview_info, hexdump, hexdump_with_width, is_probably_text, read_bytes_prefix,
-    read_text_preview,
+    TextPreviewRead, format_preview_info, hexdump, hexdump_with_width, is_probably_text,
+    read_bytes_prefix, read_text_lines_prefix, read_text_preview,
 };
 pub use progress::TransferProgress;

@@ -6,7 +6,8 @@ use super::FilemanShell;
 use crate::{
     core,
     features::file_browser::{
-        BrowserCommandState, FileOperation, FileTarget, PanelSide, PreviewState, read_local_preview,
+        BrowserCommandState, FileOperation, FileTarget, PanelSide, PreviewRequest, PreviewState,
+        load_local_preview,
     },
 };
 
@@ -105,14 +106,14 @@ impl FilemanShell {
 
         self.preview_generation = self.preview_generation.wrapping_add(1).max(1);
         let generation = self.preview_generation;
-        let path = target.path.clone();
+        let request = PreviewRequest::initial(target.clone());
         self.status = format!("previewing {}", target.name);
-        self.preview = Some(PreviewState::loading(generation, target));
+        self.preview = Some(PreviewState::loading(generation, request.clone()));
 
         cx.spawn(async move |shell, cx| {
             let body = cx
                 .background_executor()
-                .spawn(async move { read_local_preview(path) })
+                .spawn(async move { load_local_preview(request) })
                 .await;
 
             cx.update(|cx| {
@@ -120,7 +121,7 @@ impl FilemanShell {
                     if let Some(preview) = shell.preview.as_mut()
                         && preview.apply_result(generation, body)
                     {
-                        shell.status = format!("preview {}", preview.target.name);
+                        shell.status = format!("preview {}", preview.target().name);
                     }
                     cx.notify();
                 });

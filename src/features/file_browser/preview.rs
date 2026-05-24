@@ -1,33 +1,82 @@
-use std::path::PathBuf;
-
 use crate::core;
 
-use super::FileTarget;
+use super::{FileTarget, rows::FileFormat};
 
-pub const PREVIEW_MAX_BYTES: usize = 64 * 1024;
+pub const DEFAULT_PREVIEW_VISIBLE_LINES: usize = 48;
+pub const DEFAULT_PREVIEW_PRELOAD_LINES: usize = 24;
+pub const TEXT_PREVIEW_MAX_BYTES: usize = 128 * 1024;
+pub const BINARY_PREVIEW_BYTES_PER_LINE: usize = 16;
 
 #[derive(Clone)]
 pub struct PreviewState {
     pub generation: u64,
-    pub target: FileTarget,
+    pub request: PreviewRequest,
     pub body: PreviewBody,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PreviewRequest {
+    pub target: FileTarget,
+    pub viewport: PreviewViewport,
+    pub scroll_line: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PreviewViewport {
+    pub visible_lines: usize,
+    pub preload_lines: usize,
+    pub max_bytes: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PreviewBody {
-    Loading,
-    Text(String),
-    Binary(String),
+    Loading { kind: PreviewKind },
+    Text(TextPreview),
+    Listing(PreviewListing),
+    Binary(BinaryPreview),
     Error(String),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreviewKind {
+    Archive,
+    Binary,
+    Text,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TextPreview {
+    pub text: String,
+    pub first_line: usize,
+    pub loaded_lines: usize,
+    pub truncated: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PreviewListing {
+    pub entries: Vec<String>,
+    pub truncated: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BinaryPreview {
+    pub text: String,
+    pub bytes_read: usize,
+    pub truncated: bool,
+}
+
 impl PreviewState {
-    pub fn loading(generation: u64, target: FileTarget) -> Self {
+    pub fn loading(generation: u64, request: PreviewRequest) -> Self {
+        let kind = classify_preview(&request.target);
         Self {
             generation,
-            target,
-            body: PreviewBody::Loading,
+            request,
+            body: PreviewBody::Loading { kind },
         }
+    }
+
+    pub fn target(&self) -> &FileTarget {
+        &self.request.target
     }
 
     pub fn apply_result(&mut self, generation: u64, body: PreviewBody) -> bool {
@@ -40,43 +89,233 @@ impl PreviewState {
     }
 }
 
-pub fn read_local_preview(path: PathBuf) -> PreviewBody {
-    match core::read_bytes_prefix(&path, PREVIEW_MAX_BYTES) {
-        Ok(bytes) if core::is_probably_text(&bytes) => {
-            PreviewBody::Text(String::from_utf8_lossy(&bytes).into_owned())
+impl PreviewRequest {
+    pub fn initial(target: FileTarget) -> Self {
+        Self {
+            target,
+            viewport: PreviewViewport::default(),
+            scroll_line: 0,
         }
-        Ok(bytes) => PreviewBody::Binary(core::hexdump(&bytes)),
-        Err(error) => PreviewBody::Error(error.to_string()),
+    }
+
+    pub fn line_budget(&self) -> usize {
+        self.viewport.visible_lines + self.viewport.preload_lines
+    }
+}
+
+impl Default for PreviewViewport {
+    fn default() -> Self {
+        Self {
+            visible_lines: DEFAULT_PREVIEW_VISIBLE_LINES,
+            preload_lines: DEFAULT_PREVIEW_PRELOAD_LINES,
+            max_bytes: TEXT_PREVIEW_MAX_BYTES,
+        }
+    }
+}
+
+pub fn load_local_preview(request: PreviewRequest) -> PreviewBody {
+    let handlers: &[&dyn PreviewHandler] = &[
+        &ArchivePreviewHandler,
+        &TextPreviewHandler,
+        &BinaryPreviewHandler,
+    ];
+
+    match handlers.iter().find(|handler| handler.matches(&request)) {
+        Some(handler) => handler.load(request),
+        None => PreviewBody::Error("no preview handler".to_string()),
+    }
+}
+
+pub fn classify_preview(target: &FileTarget) -> PreviewKind {
+    if core::container_kind_from_path(&target.path).is_some() {
+        return PreviewKind::Archive;
+    }
+
+    match FileFormat::from_path(&target.path) {
+        FileFormat::Code | FileFormat::Text => PreviewKind::Text,
+        _ => PreviewKind::Binary,
+    }
+}
+
+trait PreviewHandler {
+    fn matches(&self, request: &PreviewRequest) -> bool;
+    fn load(&self, request: PreviewRequest) -> PreviewBody;
+}
+
+struct ArchivePreviewHandler;
+
+impl PreviewHandler for ArchivePreviewHandler {
+    fn matches(&self, request: &PreviewRequest) -> bool {
+        core::container_kind_from_path(&request.target.path).is_some()
+    }
+
+    fn load(&self, request: PreviewRequest) -> PreviewBody {
+        let Some(kind) = core::container_kind_from_path(&request.target.path) else {
+            return PreviewBody::Error("unsupported archive".to_string());
+        };
+
+        match core::read_container_directory(kind, &request.target.path, "") {
+            Ok(entries) => {
+                let line_budget = request.line_budget();
+                let entries = entries
+                    .into_iter()
+                    .filter(|entry| entry.name != "..")
+                    .map(|entry| match entry.is_dir {
+                        true => format!("{}/", entry.name),
+                        false => entry.name,
+                    })
+                    .collect::<Vec<_>>();
+                let truncated = entries.len() > line_budget;
+                PreviewBody::Listing(PreviewListing {
+                    entries: entries.into_iter().take(line_budget).collect(),
+                    truncated,
+                })
+            }
+            Err(error) => PreviewBody::Error(error.to_string()),
+        }
+    }
+}
+
+struct TextPreviewHandler;
+
+impl PreviewHandler for TextPreviewHandler {
+    fn matches(&self, request: &PreviewRequest) -> bool {
+        matches!(
+            FileFormat::from_path(&request.target.path),
+            FileFormat::Code | FileFormat::Text
+        )
+    }
+
+    fn load(&self, request: PreviewRequest) -> PreviewBody {
+        match core::read_text_lines_prefix(
+            &request.target.path,
+            request.line_budget(),
+            request.viewport.max_bytes,
+        ) {
+            Ok(preview) => PreviewBody::Text(TextPreview {
+                text: preview.text,
+                first_line: request.scroll_line,
+                loaded_lines: preview.lines_read,
+                truncated: preview.truncated,
+            }),
+            Err(error) => PreviewBody::Error(error.to_string()),
+        }
+    }
+}
+
+struct BinaryPreviewHandler;
+
+impl PreviewHandler for BinaryPreviewHandler {
+    fn matches(&self, _request: &PreviewRequest) -> bool {
+        true
+    }
+
+    fn load(&self, request: PreviewRequest) -> PreviewBody {
+        let max_bytes = request.line_budget() * BINARY_PREVIEW_BYTES_PER_LINE;
+        match core::read_bytes_prefix(&request.target.path, max_bytes) {
+            Ok(bytes) if core::is_probably_text(&bytes) => PreviewBody::Text(TextPreview {
+                text: String::from_utf8_lossy(&bytes).into_owned(),
+                first_line: request.scroll_line,
+                loaded_lines: bytes.iter().filter(|byte| **byte == b'\n').count() + 1,
+                truncated: bytes.len() >= max_bytes,
+            }),
+            Ok(bytes) => {
+                let truncated = bytes.len() >= max_bytes;
+                PreviewBody::Binary(BinaryPreview {
+                    text: core::hexdump(&bytes),
+                    bytes_read: bytes.len(),
+                    truncated,
+                })
+            }
+            Err(error) => PreviewBody::Error(error.to_string()),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{fs, path::PathBuf};
 
     use super::*;
 
-    fn target() -> FileTarget {
+    fn target(path: PathBuf) -> FileTarget {
         FileTarget {
-            path: PathBuf::from("/tmp/source.txt"),
-            name: "source.txt".to_string(),
+            name: path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("source.txt")
+                .to_string(),
+            path,
             is_dir: false,
         }
     }
 
     #[test]
     fn applies_matching_generation_result() {
-        let mut preview = PreviewState::loading(3, target());
+        let request = PreviewRequest::initial(target(PathBuf::from("/tmp/source.txt")));
+        let mut preview = PreviewState::loading(3, request);
 
-        assert!(preview.apply_result(3, PreviewBody::Text("hello".to_string())));
-        assert_eq!(preview.body, PreviewBody::Text("hello".to_string()));
+        assert!(preview.apply_result(
+            3,
+            PreviewBody::Text(TextPreview {
+                text: "hello".to_string(),
+                first_line: 0,
+                loaded_lines: 1,
+                truncated: false,
+            })
+        ));
+        assert!(matches!(preview.body, PreviewBody::Text(_)));
     }
 
     #[test]
     fn ignores_stale_generation_result() {
-        let mut preview = PreviewState::loading(3, target());
+        let request = PreviewRequest::initial(target(PathBuf::from("/tmp/source.txt")));
+        let mut preview = PreviewState::loading(3, request);
 
-        assert!(!preview.apply_result(2, PreviewBody::Text("stale".to_string())));
-        assert_eq!(preview.body, PreviewBody::Loading);
+        assert!(!preview.apply_result(
+            2,
+            PreviewBody::Text(TextPreview {
+                text: "stale".to_string(),
+                first_line: 0,
+                loaded_lines: 1,
+                truncated: false,
+            })
+        ));
+        assert_eq!(
+            preview.body,
+            PreviewBody::Loading {
+                kind: PreviewKind::Text
+            }
+        );
+    }
+
+    #[test]
+    fn text_handler_reads_only_line_budget() {
+        let path =
+            std::env::temp_dir().join(format!("fileman-preview-{}-lines.txt", std::process::id()));
+        fs::write(&path, "one\ntwo\nthree\nfour\n").unwrap();
+
+        let mut request = PreviewRequest::initial(target(path.clone()));
+        request.viewport.visible_lines = 2;
+        request.viewport.preload_lines = 1;
+        let body = load_local_preview(request);
+
+        fs::remove_file(path).unwrap();
+
+        assert!(matches!(
+            body,
+            PreviewBody::Text(TextPreview {
+                loaded_lines: 3,
+                truncated: true,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn archive_paths_are_routed_to_archive_handler() {
+        let target = target(PathBuf::from("/tmp/archive.zip"));
+
+        assert_eq!(classify_preview(&target), PreviewKind::Archive);
     }
 }

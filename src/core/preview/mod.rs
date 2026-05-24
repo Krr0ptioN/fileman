@@ -1,6 +1,6 @@
 use std::{
     fs,
-    io::{self, Read},
+    io::{self, BufRead, Read},
     path::Path,
 };
 
@@ -24,6 +24,53 @@ pub fn format_preview_info(kind: &str, location: &EntryLocation) -> String {
 pub fn read_text_preview(path: &Path, max_bytes: usize) -> anyhow::Result<String> {
     let bytes = read_prefix(path, max_bytes)?;
     Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TextPreviewRead {
+    pub text: String,
+    pub lines_read: usize,
+    pub bytes_read: usize,
+    pub truncated: bool,
+}
+
+pub fn read_text_lines_prefix(
+    path: &Path,
+    max_lines: usize,
+    max_bytes: usize,
+) -> anyhow::Result<TextPreviewRead> {
+    let file = fs::File::open(path)?;
+    let file_len = file.metadata().ok().map(|metadata| metadata.len());
+    let mut reader = io::BufReader::new(file.take(max_bytes as u64));
+    let mut text = String::new();
+    let mut line = Vec::new();
+    let mut lines_read = 0usize;
+    let mut bytes_read = 0usize;
+
+    while lines_read < max_lines {
+        line.clear();
+        let read = reader.read_until(b'\n', &mut line)?;
+        if read == 0 {
+            break;
+        }
+
+        bytes_read += read;
+        lines_read += 1;
+        text.push_str(&String::from_utf8_lossy(&line));
+
+        if bytes_read >= max_bytes {
+            break;
+        }
+    }
+
+    Ok(TextPreviewRead {
+        text,
+        lines_read,
+        bytes_read,
+        truncated: file_len
+            .map(|len| (bytes_read as u64) < len)
+            .unwrap_or(bytes_read >= max_bytes),
+    })
 }
 
 pub fn read_bytes_prefix(path: &Path, max_bytes: usize) -> anyhow::Result<Vec<u8>> {
