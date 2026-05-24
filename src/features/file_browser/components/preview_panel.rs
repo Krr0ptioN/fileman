@@ -18,19 +18,17 @@ impl PreviewPanel {
 
 impl RenderOnce for PreviewPanel {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
-        v_flex().flex_grow().gap_2().p_2().child(
-            v_flex()
-                .flex_1()
-                .min_w(px(0.0))
-                .h_full()
-                .bg(tokens::BG_PANEL)
-                .border_1()
-                .border_color(tokens::BORDER_FOCUS)
-                .rounded(px(6.0))
-                .overflow_hidden()
-                .child(preview_header(&self.preview))
-                .child(preview_body(self.preview.body)),
-        )
+        v_flex()
+            .flex_1()
+            .min_w(px(0.0))
+            .h_full()
+            .bg(tokens::BG_PANEL)
+            .border_1()
+            .border_color(tokens::BORDER_SUBTLE)
+            .rounded(px(6.0))
+            .overflow_hidden()
+            .child(preview_header(&self.preview))
+            .child(preview_body(self.preview.body))
     }
 }
 

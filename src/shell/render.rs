@@ -1,16 +1,43 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{Context, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window};
-use gpui_component::v_flex;
+use gpui_component::{h_flex, v_flex};
 
 use super::FilemanShell;
-use crate::features::file_browser::{
-    CommandBar, HelpPopup, LeaderMap, PanelLayout, PreviewPanel, TitleBar, tokens,
+use crate::features::{
+    file_browser::{
+        CommandBar, FilePanel, HelpPopup, LayoutVariant, LeaderMap, PanelLayout, PreviewPanel,
+        TitleBar, tokens,
+    },
+    layout::PaneMode,
 };
 
 impl Render for FilemanShell {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let panel_region = match self.preview.as_ref() {
-            Some(preview) => PreviewPanel::new(preview).into_any_element(),
+            Some(preview) => match LayoutVariant::resolve(window.viewport_size(), PaneMode::Dual) {
+                LayoutVariant::SingleActive | LayoutVariant::DualStacked => v_flex()
+                    .flex_grow()
+                    .gap_2()
+                    .p_2()
+                    .child(FilePanel::new(
+                        self.active_panel(),
+                        true,
+                        self.pending_confirm.as_ref(),
+                    ))
+                    .child(PreviewPanel::new(preview))
+                    .into_any_element(),
+                LayoutVariant::DualSplit => h_flex()
+                    .flex_grow()
+                    .gap_2()
+                    .p_2()
+                    .child(FilePanel::new(
+                        self.active_panel(),
+                        true,
+                        self.pending_confirm.as_ref(),
+                    ))
+                    .child(PreviewPanel::new(preview))
+                    .into_any_element(),
+            },
             None => PanelLayout::new(
                 &self.primary,
                 &self.secondary,
