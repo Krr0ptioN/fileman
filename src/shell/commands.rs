@@ -74,6 +74,7 @@ impl FilemanShell {
         if reveal_active {
             self.ensure_panel_loaded(self.active, cx);
             self.active_panel().reveal_selected();
+            self.schedule_preview_preload(cx);
         }
     }
 

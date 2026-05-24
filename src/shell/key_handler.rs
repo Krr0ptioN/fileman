@@ -67,8 +67,8 @@ impl AppKeyHandler<Context<'_, FilemanShell>> for FilemanShell {
         !self.vim_command.pending.is_empty()
     }
 
-    fn navigation_key(&mut self, event: &KeyDownEvent) -> bool {
-        self.handle_navigation_key(event)
+    fn navigation_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        self.handle_navigation_key(event, cx)
     }
 
     fn vim_char(&mut self, ch: char, cx: &mut Context<Self>) -> bool {

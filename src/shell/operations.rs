@@ -1,15 +1,17 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
-use gpui::Context;
+use gpui::{Context, Timer};
 
 use super::FilemanShell;
 use crate::{
     core,
     features::file_browser::{
-        BrowserCommandState, FileOperation, FileTarget, PanelSide, PreviewRequest, PreviewState,
-        load_local_preview,
+        BrowserCommandState, FileOperation, FileTarget, PanelSide, PreviewCacheEntry,
+        PreviewRequest, PreviewState, load_local_preview,
     },
 };
+
+const PREVIEW_PRELOAD_DELAY: Duration = Duration::from_millis(750);
 
 impl FilemanShell {
     pub(super) fn load_panel(
@@ -35,6 +37,7 @@ impl FilemanShell {
             cx.update(|cx| {
                 let _ = shell.update(cx, |shell, cx| {
                     shell.apply_loaded_panel(side, path, prefer_name, generation, result);
+                    shell.schedule_preview_preload(cx);
                     cx.notify();
                 });
             })
@@ -106,6 +109,20 @@ impl FilemanShell {
 
         self.preview_generation = self.preview_generation.wrapping_add(1).max(1);
         let generation = self.preview_generation;
+        if let Some(preload) = self
+            .preview_preload
+            .as_ref()
+            .filter(|preload| preload.matches_target(&target))
+        {
+            self.preview = Some(PreviewState::loaded(
+                generation,
+                preload.request.clone(),
+                preload.body.clone(),
+            ));
+            self.status = format!("preview {}", target.name);
+            return;
+        }
+
         let request = PreviewRequest::initial(target.clone());
         self.status = format!("previewing {}", target.name);
         self.preview = Some(PreviewState::loading(generation, request.clone()));
@@ -113,11 +130,16 @@ impl FilemanShell {
         cx.spawn(async move |shell, cx| {
             let body = cx
                 .background_executor()
-                .spawn(async move { load_local_preview(request) })
+                .spawn({
+                    let request = request.clone();
+                    async move { load_local_preview(request) }
+                })
                 .await;
 
             cx.update(|cx| {
                 let _ = shell.update(cx, |shell, cx| {
+                    let cache_entry = PreviewCacheEntry::new(request, body.clone());
+                    shell.preview_preload = Some(cache_entry);
                     if let Some(preview) = shell.preview.as_mut()
                         && preview.apply_result(generation, body)
                     {
@@ -128,6 +150,91 @@ impl FilemanShell {
             })
         })
         .detach();
+    }
+
+    pub(super) fn schedule_preview_preload(&mut self, cx: &mut Context<Self>) {
+        let Some(target) = self.selected_preview_target() else {
+            return;
+        };
+        if target.is_dir {
+            return;
+        }
+        if self
+            .preview_preload
+            .as_ref()
+            .is_some_and(|preload| preload.matches_target(&target))
+        {
+            return;
+        }
+
+        self.preview_preload_generation = self.preview_preload_generation.wrapping_add(1).max(1);
+        let generation = self.preview_preload_generation;
+
+        cx.spawn(async move |shell, cx| {
+            Timer::after(PREVIEW_PRELOAD_DELAY).await;
+
+            cx.update(|cx| {
+                let _ = shell.update(cx, |shell, cx| {
+                    shell.start_preview_preload(generation, target, cx);
+                });
+            })
+        })
+        .detach();
+    }
+
+    fn start_preview_preload(
+        &mut self,
+        generation: u64,
+        target: FileTarget,
+        cx: &mut Context<Self>,
+    ) {
+        if generation != self.preview_preload_generation {
+            return;
+        }
+        if !self
+            .selected_preview_target()
+            .is_some_and(|selected| selected == target)
+        {
+            return;
+        }
+
+        let request = PreviewRequest::initial(target);
+        cx.spawn(async move |shell, cx| {
+            let body = cx
+                .background_executor()
+                .spawn({
+                    let request = request.clone();
+                    async move { load_local_preview(request) }
+                })
+                .await;
+
+            cx.update(|cx| {
+                let _ = shell.update(cx, |shell, cx| {
+                    if generation != shell.preview_preload_generation {
+                        return;
+                    }
+
+                    let entry = PreviewCacheEntry::new(request, body);
+                    if let Some(preview) = shell.preview.as_mut()
+                        && entry.matches_target(preview.target())
+                        && matches!(
+                            preview.body,
+                            crate::features::file_browser::PreviewBody::Loading { .. }
+                        )
+                    {
+                        preview.body = entry.body.clone();
+                        shell.status = format!("preview {}", preview.target().name);
+                    }
+                    shell.preview_preload = Some(entry);
+                    cx.notify();
+                });
+            })
+        })
+        .detach();
+    }
+
+    fn selected_preview_target(&self) -> Option<FileTarget> {
+        self.active_panel().selected_row().map(FileTarget::from_row)
     }
 
     fn apply_loaded_panel(

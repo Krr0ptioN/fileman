@@ -14,6 +14,12 @@ pub struct PreviewState {
     pub body: PreviewBody,
 }
 
+#[derive(Clone)]
+pub struct PreviewCacheEntry {
+    pub request: PreviewRequest,
+    pub body: PreviewBody,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PreviewRequest {
     pub target: FileTarget,
@@ -75,6 +81,14 @@ impl PreviewState {
         }
     }
 
+    pub fn loaded(generation: u64, request: PreviewRequest, body: PreviewBody) -> Self {
+        Self {
+            generation,
+            request,
+            body,
+        }
+    }
+
     pub fn target(&self) -> &FileTarget {
         &self.request.target
     }
@@ -86,6 +100,18 @@ impl PreviewState {
 
         self.body = body;
         true
+    }
+}
+
+impl PreviewCacheEntry {
+    pub fn new(request: PreviewRequest, body: PreviewBody) -> Self {
+        Self { request, body }
+    }
+
+    pub fn matches_target(&self, target: &FileTarget) -> bool {
+        self.request.target.path == target.path
+            && self.request.target.name == target.name
+            && self.request.target.is_dir == target.is_dir
     }
 }
 
@@ -317,5 +343,24 @@ mod tests {
         let target = target(PathBuf::from("/tmp/archive.zip"));
 
         assert_eq!(classify_preview(&target), PreviewKind::Archive);
+    }
+
+    #[test]
+    fn cache_entry_matches_same_target_identity() {
+        let target = target(PathBuf::from("/tmp/source.txt"));
+        let request = PreviewRequest::initial(target.clone());
+        let entry = PreviewCacheEntry::new(
+            request,
+            PreviewBody::Loading {
+                kind: PreviewKind::Text,
+            },
+        );
+
+        assert!(entry.matches_target(&target));
+        assert!(!entry.matches_target(&FileTarget {
+            path: PathBuf::from("/tmp/other.txt"),
+            name: "other.txt".to_string(),
+            is_dir: false,
+        }));
     }
 }

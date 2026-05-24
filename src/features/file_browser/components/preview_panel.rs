@@ -1,5 +1,7 @@
 use gpui::prelude::FluentBuilder;
-use gpui::{App, FontWeight, IntoElement, ParentElement, RenderOnce, Styled, Window, div, px};
+use gpui::{
+    App, FontWeight, IntoElement, ParentElement, RenderOnce, Styled, Window, div, px, relative,
+};
 use gpui_component::{h_flex, scroll::ScrollableElement, v_flex};
 
 use crate::features::file_browser::{
@@ -61,16 +63,16 @@ fn preview_header(preview: &PreviewState) -> impl IntoElement {
 }
 
 fn preview_body(body: PreviewBody) -> impl IntoElement {
-    let (label, lines, muted) = match body {
+    let (label, muted, content) = match body {
         PreviewBody::Loading { kind } => (
             preview_kind_label(kind),
-            vec![format!("Loading {} preview...", preview_kind_label(kind))],
             None,
+            skeleton_rows().into_any_element(),
         ),
-        PreviewBody::Text(preview) => text_lines(preview),
-        PreviewBody::Listing(preview) => listing_lines(preview),
-        PreviewBody::Binary(preview) => binary_lines(preview),
-        PreviewBody::Error(error) => ("error", vec![error], None),
+        PreviewBody::Text(preview) => preview_lines(text_lines(preview)),
+        PreviewBody::Listing(preview) => preview_lines(listing_lines(preview)),
+        PreviewBody::Binary(preview) => preview_lines(binary_lines(preview)),
+        PreviewBody::Error(error) => preview_lines(("error", vec![error], None)),
     };
 
     v_flex()
@@ -92,17 +94,7 @@ fn preview_body(body: PreviewBody) -> impl IntoElement {
                     .child(muted),
             )
         })
-        .child(
-            div()
-                .text_size(px(12.0))
-                .text_color(tokens::TEXT_SECONDARY)
-                .whitespace_normal()
-                .children(
-                    lines
-                        .into_iter()
-                        .map(|line| div().min_h(px(16.0)).child(empty_line_placeholder(line))),
-                ),
-        )
+        .child(content)
 }
 
 fn preview_kind_label(kind: PreviewKind) -> &'static str {
@@ -150,6 +142,44 @@ fn binary_lines(preview: BinaryPreview) -> (&'static str, Vec<String>, Option<St
         preview.text.lines().map(String::from).collect(),
         muted,
     )
+}
+
+fn preview_lines(
+    (label, lines, muted): (&'static str, Vec<String>, Option<String>),
+) -> (&'static str, Option<String>, gpui::AnyElement) {
+    (
+        label,
+        muted,
+        div()
+            .text_size(px(12.0))
+            .text_color(tokens::TEXT_SECONDARY)
+            .whitespace_normal()
+            .children(
+                lines
+                    .into_iter()
+                    .map(|line| div().min_h(px(16.0)).child(empty_line_placeholder(line))),
+            )
+            .into_any_element(),
+    )
+}
+
+fn skeleton_rows() -> impl IntoElement {
+    v_flex().gap_2().children((0..12).map(|ix| {
+        div()
+            .h(px(10.0))
+            .w(relative(skeleton_width(ix)))
+            .rounded(px(3.0))
+            .bg(tokens::BORDER_SUBTLE)
+    }))
+}
+
+fn skeleton_width(index: usize) -> f32 {
+    match index % 4 {
+        0 => 0.62,
+        1 => 0.92,
+        2 => 0.78,
+        _ => 0.48,
+    }
 }
 
 fn empty_line_placeholder(line: String) -> String {

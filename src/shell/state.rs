@@ -4,7 +4,8 @@ use gpui::{Context, FocusHandle};
 
 use crate::features::{
     file_browser::{
-        BrowserCommand, BrowserPanel, InputMode, PanelSide, PendingConfirm, PreviewState,
+        BrowserCommand, BrowserPanel, InputMode, PanelSide, PendingConfirm, PreviewCacheEntry,
+        PreviewState,
     },
     keybind::{HeldNavigation, KeybindRegistry, VimCommandState, file_manager_keybinds},
     layout::LayoutState,
@@ -25,6 +26,8 @@ pub(crate) struct FilemanShell {
     pub(super) operation_in_flight: bool,
     pub(super) preview: Option<PreviewState>,
     pub(super) preview_generation: u64,
+    pub(super) preview_preload: Option<PreviewCacheEntry>,
+    pub(super) preview_preload_generation: u64,
     pub(super) status: String,
 }
 
@@ -52,6 +55,8 @@ impl FilemanShell {
             operation_in_flight: false,
             preview: None,
             preview_generation: 0,
+            preview_preload: None,
+            preview_preload_generation: 0,
             status: "normal".to_string(),
         };
         shell.load_panel(PanelSide::Left, start_path, None, cx);

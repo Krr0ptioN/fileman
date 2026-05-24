@@ -18,7 +18,7 @@ pub trait AppKeyHandler<Cx> {
     fn open_leader(&mut self);
     fn close_leader(&mut self);
     fn has_pending_vim(&self) -> bool;
-    fn navigation_key(&mut self, event: &KeyDownEvent) -> bool;
+    fn navigation_key(&mut self, event: &KeyDownEvent, cx: &mut Cx) -> bool;
     fn vim_char(&mut self, ch: char, cx: &mut Cx) -> bool;
 }
 
@@ -38,7 +38,7 @@ where
 
     match reset_navigation {
         true => KeyCommandAction::HandledResetNavigation,
-        false if handler.navigation_key(event) => KeyCommandAction::HandledKeepNavigation,
+        false if handler.navigation_key(event, cx) => KeyCommandAction::HandledKeepNavigation,
         false if handle_vim_key(handler, event, cx) => KeyCommandAction::HandledResetNavigation,
         false => KeyCommandAction::Ignored,
     }
