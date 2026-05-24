@@ -21,6 +21,7 @@ impl PanelHeader {
         match (&self.panel.loading, &self.panel.error) {
             (true, _) => "loading".to_string(),
             (_, Some(error)) => error.clone(),
+            _ if self.panel.show_hidden => format!("{} rows | hidden", self.panel.rows.len()),
             _ => format!("{} rows", self.panel.rows.len()),
         }
     }

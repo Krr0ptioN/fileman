@@ -7,6 +7,14 @@ pub(super) fn register(registry: &mut Registry) {
     super::bind(registry, "s", "toggle pane mode", "General", true, |_| {
         BrowserCommand::TogglePaneMode
     });
+    super::bind(
+        registry,
+        "gh",
+        "toggle hidden entries",
+        "General",
+        false,
+        |_| BrowserCommand::ToggleHidden,
+    );
     super::bind(registry, "w", "switch pane", "General", true, |_| {
         BrowserCommand::SwitchPanel
     });

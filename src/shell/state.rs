@@ -92,6 +92,7 @@ impl FilemanShell {
             path: start_path.clone(),
             selected_index: 0,
             rows: Vec::new(),
+            show_hidden: false,
             marked: HashSet::new(),
             loading: false,
             error: None,

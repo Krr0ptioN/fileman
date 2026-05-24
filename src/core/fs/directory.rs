@@ -1,13 +1,8 @@
-use std::{
-    fs, io,
-    path::{self, Path},
-    time::UNIX_EPOCH,
-};
+use std::{fs, io, path, time::UNIX_EPOCH};
 
 use crate::core::{DirEntry, EntryLocation};
 
 pub fn read_fs_directory(path: &path::Path) -> anyhow::Result<Vec<DirEntry>> {
-    let mut entries = Vec::new();
     let mut dir_entries = Vec::new();
 
     for entry in fs::read_dir(path)? {
@@ -15,12 +10,7 @@ pub fn read_fs_directory(path: &path::Path) -> anyhow::Result<Vec<DirEntry>> {
     }
 
     dir_entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
-    if let Some(parent) = path.parent() {
-        entries.push(parent_entry(parent));
-    }
-    entries.extend(dir_entries);
-
-    Ok(entries)
+    Ok(dir_entries)
 }
 
 fn dir_entry(entry: fs::DirEntry) -> io::Result<DirEntry> {
@@ -52,19 +42,6 @@ fn metadata_for(entry: &fs::DirEntry, is_symlink: bool) -> Option<fs::Metadata> 
     }
 }
 
-fn parent_entry(parent: &Path) -> DirEntry {
-    DirEntry {
-        name: "..".to_string(),
-        is_dir: true,
-        is_symlink: false,
-        is_executable: false,
-        link_target: None,
-        location: EntryLocation::Fs(parent.to_path_buf()),
-        size: None,
-        modified: None,
-    }
-}
-
 fn is_executable(metadata: Option<&fs::Metadata>) -> bool {
     match metadata {
         Some(metadata) => executable_bit(metadata),
@@ -89,4 +66,28 @@ fn modified_secs(metadata: &fs::Metadata) -> Option<u64> {
         .ok()
         .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
         .map(|duration| duration.as_secs())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::read_fs_directory;
+
+    #[test]
+    fn directory_read_does_not_create_parent_row() {
+        let directory = std::env::temp_dir().join(format!(
+            "fileman-directory-{}-without-parent",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).unwrap();
+
+        let entries = read_fs_directory(&directory).unwrap();
+
+        assert_eq!(entries.len(), 0);
+        assert!(!entries.iter().any(|entry| entry.name == ".."));
+
+        fs::remove_dir_all(directory).unwrap();
+    }
 }

@@ -22,6 +22,7 @@ pub enum BrowserCommand {
     NewDirectory,
     Preview,
     TogglePaneMode,
+    ToggleHidden,
     SwitchPanel,
     Reload,
     OpenHelp,
@@ -31,7 +32,11 @@ impl BrowserCommand {
     pub fn requires_rows(self) -> bool {
         !matches!(
             self,
-            Self::OpenParent | Self::SwitchPanel | Self::OpenHelp | Self::NewDirectory
+            Self::OpenParent
+                | Self::ToggleHidden
+                | Self::SwitchPanel
+                | Self::OpenHelp
+                | Self::NewDirectory
         )
     }
 

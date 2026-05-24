@@ -68,13 +68,17 @@ impl<'a> BrowserCommandState<'a> {
         let status = match result {
             Ok(entries) => {
                 panel.path = path;
-                panel.rows = entries.into_iter().map(FileRow::from_entry).collect();
+                panel.rows = entries
+                    .into_iter()
+                    .filter(|entry| is_visible_entry(&entry.name, panel.show_hidden))
+                    .map(FileRow::from_entry)
+                    .collect();
                 panel
                     .marked
                     .retain(|path| panel.rows.iter().any(|row| &row.path == path));
                 panel.selected_index = prefer_name
                     .and_then(|name| panel.rows.iter().position(|row| row.name == name))
-                    .unwrap_or_else(|| usize::from(panel.rows.len() > 1).min(panel.rows.len()));
+                    .unwrap_or(0);
                 panel.error = None;
                 let selected = panel.selected_name().to_string();
                 format!("{} rows, selected {selected}", panel.rows.len())
@@ -88,6 +92,10 @@ impl<'a> BrowserCommandState<'a> {
         };
         Some(status)
     }
+}
+
+fn is_visible_entry(name: &str, show_hidden: bool) -> bool {
+    !matches!(name, "." | "..") && (show_hidden || !name.starts_with('.'))
 }
 
 #[cfg(test)]
@@ -131,6 +139,7 @@ mod tests {
             path: PathBuf::from("/tmp"),
             selected_index: 1,
             rows: vec![row("old-a"), row("old-b")],
+            show_hidden: false,
             marked: HashSet::from([PathBuf::from("/tmp/old-a")]),
             loading: false,
             error: Some("previous error".to_string()),
@@ -190,21 +199,59 @@ mod tests {
             generation,
             Ok(vec![
                 entry("..", true),
+                entry(".cache", true),
                 entry("keep.txt", false),
                 entry("target.txt", false),
             ]),
         );
 
-        assert_eq!(status.as_deref(), Some("3 rows, selected target.txt"));
+        assert_eq!(status.as_deref(), Some("2 rows, selected target.txt"));
         assert!(!panel.loading);
         assert_eq!(panel.path, PathBuf::from("/next"));
-        assert_eq!(panel.selected_index, 2);
+        assert_eq!(panel.selected_index, 1);
         assert_eq!(panel.selected_name(), "target.txt");
+        assert_eq!(
+            panel
+                .rows
+                .iter()
+                .map(|row| row.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["keep.txt", "target.txt"]
+        );
         assert_eq!(
             panel.marked,
             HashSet::from([PathBuf::from("/next/keep.txt")])
         );
         assert!(panel.error.is_none());
+    }
+
+    #[test]
+    fn apply_loaded_shows_hidden_entries_when_enabled_but_never_parent_rows() {
+        let mut panel = panel();
+        panel.show_hidden = true;
+        let generation = panel.load_generation;
+
+        BrowserCommandState::apply_loaded(
+            &mut panel,
+            PathBuf::from("/next"),
+            None,
+            generation,
+            Ok(vec![
+                entry("..", true),
+                entry(".cache", true),
+                entry("visible", false),
+            ]),
+        );
+
+        assert_eq!(
+            panel
+                .rows
+                .iter()
+                .map(|row| row.name.as_str())
+                .collect::<Vec<_>>(),
+            vec![".cache", "visible"]
+        );
+        assert_eq!(panel.selected_name(), ".cache");
     }
 
     #[test]

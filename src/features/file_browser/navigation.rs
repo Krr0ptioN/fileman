@@ -54,9 +54,7 @@ pub fn selected_navigation(panel: &BrowserPanel) -> PanelNavigation {
     match row.is_dir {
         true => PanelNavigation::Load {
             path: row.path.clone(),
-            prefer_name: (row.name == "..")
-                .then(|| panel.path.file_name()?.to_str().map(str::to_string))
-                .flatten(),
+            prefer_name: None,
         },
         false => PanelNavigation::OpenWithSystem {
             path: row.path.clone(),

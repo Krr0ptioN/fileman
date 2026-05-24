@@ -95,6 +95,21 @@ fn execute_ready_command(
         BrowserCommand::TogglePaneMode => {
             BrowserCommandOutcome::effect(BrowserCommandEffect::TogglePaneMode)
         }
+        BrowserCommand::ToggleHidden => {
+            let panel = state.active_panel_mut();
+            panel.show_hidden = !panel.show_hidden;
+            let status = match panel.show_hidden {
+                true => "showing hidden entries",
+                false => "hiding hidden entries",
+            };
+            BrowserCommandOutcome::status_effect(
+                status,
+                BrowserCommandEffect::LoadActive {
+                    path: panel.path.clone(),
+                    prefer_name: panel.selected_row().map(|row| row.name.clone()),
+                },
+            )
+        }
         BrowserCommand::SwitchPanel => {
             BrowserCommandOutcome::status(state.switch_panel()).reveal_active()
         }
@@ -150,8 +165,9 @@ mod tests {
             side,
             title: side.label(),
             path: PathBuf::from("/tmp"),
-            selected_index: 1,
-            rows: vec![row("..", true), row("alpha", true), row("beta.txt", false)],
+            selected_index: 0,
+            rows: vec![row("alpha", true), row("beta.txt", false)],
+            show_hidden: false,
             marked: HashSet::new(),
             loading: false,
             error: None,
@@ -197,7 +213,7 @@ mod tests {
             "j",
         );
 
-        assert_eq!(primary.selected_index, 2);
+        assert_eq!(primary.selected_index, 1);
         assert_eq!(outcome.status.as_deref(), Some("j -> beta.txt"));
         assert!(outcome.reveal_active);
         assert!(matches!(outcome.effect, BrowserCommandEffect::None));
@@ -284,6 +300,34 @@ mod tests {
     }
 
     #[test]
+    fn toggle_hidden_reloads_empty_panel_and_changes_visibility_mode() {
+        let mut primary = panel(PanelSide::Left);
+        primary.rows.clear();
+        let mut secondary = panel(PanelSide::Right);
+        let mut active = PanelSide::Left;
+        let mut input_mode = InputMode::Normal;
+        let mut pending_confirm = None;
+
+        let outcome = with_state(
+            &mut primary,
+            &mut secondary,
+            &mut active,
+            &mut input_mode,
+            &mut pending_confirm,
+            BrowserCommand::ToggleHidden,
+            "gh",
+        );
+
+        assert!(primary.show_hidden);
+        assert_eq!(outcome.status.as_deref(), Some("showing hidden entries"));
+        assert!(matches!(
+            outcome.effect,
+            BrowserCommandEffect::LoadActive { ref path, prefer_name: None }
+                if path == &PathBuf::from("/tmp")
+        ));
+    }
+
+    #[test]
     fn delete_prepares_confirmation_without_shell_context() {
         let mut primary = panel(PanelSide::Left);
         let mut secondary = panel(PanelSide::Right);
@@ -342,7 +386,7 @@ mod tests {
     #[test]
     fn preview_returns_selected_file_effect() {
         let mut primary = panel(PanelSide::Left);
-        primary.selected_index = 2;
+        primary.selected_index = 1;
         let mut secondary = panel(PanelSide::Right);
         let mut active = PanelSide::Left;
         let mut input_mode = InputMode::Normal;
