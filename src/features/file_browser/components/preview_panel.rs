@@ -40,7 +40,7 @@ impl RenderOnce for PreviewPanel {
             .rounded(px(6.0))
             .overflow_hidden()
             .child(preview_header(&self.preview))
-            .child(preview_body(self.preview.body))
+            .child(preview_body(&self.preview.request, self.preview.body))
     }
 }
 
@@ -69,14 +69,17 @@ fn preview_header(preview: &PreviewState) -> impl IntoElement {
         )
 }
 
-fn preview_body(body: PreviewBody) -> impl IntoElement {
+fn preview_body(
+    request: &crate::features::file_browser::PreviewRequest,
+    body: PreviewBody,
+) -> impl IntoElement {
     let (label, muted, content) = match body {
         PreviewBody::Loading { kind } => (
             preview_kind_label(kind),
             None,
             skeleton_rows().into_any_element(),
         ),
-        PreviewBody::Text(preview) => preview_lines(text_lines(preview)),
+        PreviewBody::Text(preview) => preview_lines(text_lines(request, preview)),
         PreviewBody::Listing(preview) => preview_lines(listing_lines(preview)),
         PreviewBody::Binary(preview) => preview_lines(binary_lines(preview)),
         PreviewBody::Error(error) => preview_lines(("error", vec![error], None)),
@@ -113,21 +116,28 @@ fn preview_kind_label(kind: PreviewKind) -> &'static str {
     }
 }
 
-fn text_lines(preview: TextPreview) -> (&'static str, Vec<String>, Option<String>) {
+fn text_lines(
+    request: &crate::features::file_browser::PreviewRequest,
+    preview: TextPreview,
+) -> (&'static str, Vec<String>, Option<String>) {
+    let skip = request.scroll_line.saturating_sub(preview.first_line);
+    let lines = preview
+        .text
+        .lines()
+        .skip(skip)
+        .take(request.viewport.visible_lines)
+        .map(String::from)
+        .collect();
     let muted = match preview.truncated {
         true => Some(format!(
             "showing {} loaded lines from line {}",
             preview.loaded_lines,
-            preview.first_line + 1
+            request.scroll_line + 1
         )),
         false => Some(format!("{} loaded lines", preview.loaded_lines)),
     };
 
-    (
-        "text",
-        preview.text.lines().map(String::from).collect(),
-        muted,
-    )
+    ("text", lines, muted)
 }
 
 fn listing_lines(preview: PreviewListing) -> (&'static str, Vec<String>, Option<String>) {

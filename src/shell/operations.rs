@@ -6,7 +6,7 @@ use super::{FilemanShell, state::ShellPaneFocus};
 use crate::{
     core,
     features::file_browser::{
-        BrowserCommandState, FileOperation, FileTarget, PanelSide, PreviewCacheEntry,
+        BrowserCommandState, FileOperation, FileTarget, PanelSide, PreviewBody, PreviewCacheEntry,
         PreviewRequest, PreviewState, load_local_preview,
     },
 };
@@ -142,11 +142,11 @@ impl FilemanShell {
         if let Some(preload) = self
             .preview_preload
             .as_ref()
-            .filter(|preload| preload.matches_request(&request))
+            .filter(|preload| preload.matches_target(&target))
         {
             self.preview = Some(PreviewState::loaded(
                 generation,
-                preload.request.clone(),
+                request,
                 preload.body.clone(),
             ));
             self.pane_focus = ShellPaneFocus::Preview;
@@ -184,9 +184,16 @@ impl FilemanShell {
     }
 
     pub(super) fn hide_preview_pane(&mut self) {
+        if let Some(preview) = self.preview.as_ref() {
+            self.preview_preload = Some(PreviewCacheEntry::new(
+                preview.request.clone(),
+                preview.body.clone(),
+            ));
+        }
         self.preview = None;
         self.pane_focus = ShellPaneFocus::Browser;
         self.pane_focus_prefix = false;
+        self.preview_pending_scroll_line = None;
     }
 
     pub(super) fn flush_preview_memory(&mut self) {
@@ -194,6 +201,9 @@ impl FilemanShell {
         self.preview_preload = None;
         self.preview_preload_generation = self.preview_preload_generation.wrapping_add(1).max(1);
         self.preview_generation = self.preview_generation.wrapping_add(1).max(1);
+        self.preview_extension_generation =
+            self.preview_extension_generation.wrapping_add(1).max(1);
+        self.preview_extension_start_line = None;
     }
 
     pub(super) fn focus_browser_pane(&mut self) {
@@ -243,7 +253,17 @@ impl FilemanShell {
             return true;
         }
 
-        self.reload_visible_preview(request, cx);
+        if self.preview_body_can_cover(&request) {
+            if let Some(preview) = self.preview.as_mut() {
+                preview.request = request;
+            }
+            self.maybe_extend_visible_preview(cx);
+        } else if self.preview_can_extend_text() {
+            self.preview_pending_scroll_line = Some(request.scroll_line);
+            self.maybe_extend_visible_preview(cx);
+        } else {
+            self.reload_visible_preview(request, cx);
+        }
         true
     }
 
@@ -294,6 +314,105 @@ impl FilemanShell {
                         shell.status = format!("preview {}", preview.target().name);
                     }
                     cx.notify();
+                });
+            })
+        })
+        .detach();
+    }
+
+    fn preview_body_can_cover(&self, request: &PreviewRequest) -> bool {
+        match self.preview.as_ref().map(|preview| &preview.body) {
+            Some(PreviewBody::Text(text)) => text.contains_line(request.scroll_line),
+            Some(PreviewBody::Listing(listing)) => request.scroll_line < listing.entries.len(),
+            _ => false,
+        }
+    }
+
+    fn preview_can_extend_text(&self) -> bool {
+        matches!(
+            self.preview.as_ref().map(|preview| &preview.body),
+            Some(PreviewBody::Text(text)) if text.truncated
+        )
+    }
+
+    fn maybe_extend_visible_preview(&mut self, cx: &mut Context<Self>) {
+        let Some(preview) = self.preview.as_ref() else {
+            return;
+        };
+        let PreviewBody::Text(text) = &preview.body else {
+            return;
+        };
+        if !text.truncated {
+            return;
+        }
+
+        let threshold = preview
+            .request
+            .scroll_line
+            .saturating_add(preview.request.viewport.visible_lines)
+            .saturating_add(preview.request.viewport.preload_lines);
+        let loaded_end = text.loaded_end_line();
+        if threshold < loaded_end {
+            return;
+        }
+        if self.preview_extension_start_line == Some(loaded_end) {
+            return;
+        }
+
+        let mut request = preview.request.clone();
+        request.scroll_line = loaded_end;
+        request.viewport.visible_lines = preview.request.viewport.preload_lines.max(8);
+        request.viewport.preload_lines = 0;
+        self.extend_visible_preview(request, cx);
+    }
+
+    fn extend_visible_preview(&mut self, request: PreviewRequest, cx: &mut Context<Self>) {
+        self.preview_extension_generation =
+            self.preview_extension_generation.wrapping_add(1).max(1);
+        let generation = self.preview_extension_generation;
+        self.preview_extension_start_line = Some(request.scroll_line);
+
+        cx.spawn(async move |shell, cx| {
+            let body = cx
+                .background_executor()
+                .spawn({
+                    let request = request.clone();
+                    async move { load_local_preview(request) }
+                })
+                .await;
+
+            cx.update(|cx| {
+                let _ = shell.update(cx, |shell, cx| {
+                    if shell.preview_extension_generation != generation {
+                        return;
+                    }
+                    shell.preview_extension_start_line = None;
+                    let Some(preview) = shell.preview.as_mut() else {
+                        return;
+                    };
+                    if preview.target() != &request.target {
+                        return;
+                    }
+                    if preview.body.merge_extension(body) {
+                        if let Some(pending_scroll_line) = shell.preview_pending_scroll_line {
+                            let can_cover_pending = match &preview.body {
+                                PreviewBody::Text(text) => text.contains_line(pending_scroll_line),
+                                PreviewBody::Listing(listing) => {
+                                    pending_scroll_line < listing.entries.len()
+                                }
+                                _ => false,
+                            };
+                            if can_cover_pending {
+                                preview.request.scroll_line = pending_scroll_line;
+                                shell.preview_pending_scroll_line = None;
+                            }
+                        }
+                        shell.preview_preload = Some(PreviewCacheEntry::new(
+                            preview.request.clone(),
+                            preview.body.clone(),
+                        ));
+                        cx.notify();
+                    }
                 });
             })
         })

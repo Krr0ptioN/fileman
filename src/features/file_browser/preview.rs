@@ -71,6 +71,36 @@ pub struct BinaryPreview {
     pub truncated: bool,
 }
 
+impl TextPreview {
+    pub fn loaded_end_line(&self) -> usize {
+        self.first_line.saturating_add(self.loaded_lines)
+    }
+
+    pub fn contains_line(&self, line: usize) -> bool {
+        line >= self.first_line && line < self.loaded_end_line()
+    }
+
+    pub fn append(&mut self, next: TextPreview) -> bool {
+        if next.first_line != self.loaded_end_line() {
+            return false;
+        }
+
+        self.text.push_str(&next.text);
+        self.loaded_lines = self.loaded_lines.saturating_add(next.loaded_lines);
+        self.truncated = next.truncated;
+        true
+    }
+}
+
+impl PreviewBody {
+    pub fn merge_extension(&mut self, extension: PreviewBody) -> bool {
+        match (self, extension) {
+            (Self::Text(current), Self::Text(next)) => current.append(next),
+            _ => false,
+        }
+    }
+}
+
 impl PreviewState {
     pub fn loading(generation: u64, request: PreviewRequest) -> Self {
         let kind = classify_preview(&request.target);
@@ -376,6 +406,47 @@ mod tests {
                 ..
             }) if text == "three\nfour\n"
         ));
+    }
+
+    #[test]
+    fn text_preview_appends_adjacent_extension() {
+        let mut preview = TextPreview {
+            text: "one\ntwo\n".to_string(),
+            first_line: 0,
+            loaded_lines: 2,
+            truncated: true,
+        };
+
+        assert!(preview.append(TextPreview {
+            text: "three\nfour\n".to_string(),
+            first_line: 2,
+            loaded_lines: 2,
+            truncated: false,
+        }));
+
+        assert_eq!(preview.text, "one\ntwo\nthree\nfour\n");
+        assert_eq!(preview.loaded_lines, 4);
+        assert!(!preview.truncated);
+    }
+
+    #[test]
+    fn text_preview_rejects_non_adjacent_extension() {
+        let mut preview = TextPreview {
+            text: "one\ntwo\n".to_string(),
+            first_line: 0,
+            loaded_lines: 2,
+            truncated: true,
+        };
+
+        assert!(!preview.append(TextPreview {
+            text: "four\n".to_string(),
+            first_line: 3,
+            loaded_lines: 1,
+            truncated: false,
+        }));
+        assert_eq!(preview.text, "one\ntwo\n");
+        assert_eq!(preview.loaded_lines, 2);
+        assert!(preview.truncated);
     }
 
     #[test]
