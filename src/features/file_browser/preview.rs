@@ -113,6 +113,12 @@ impl PreviewCacheEntry {
             && self.request.target.name == target.name
             && self.request.target.is_dir == target.is_dir
     }
+
+    pub fn matches_request(&self, request: &PreviewRequest) -> bool {
+        self.matches_target(&request.target)
+            && self.request.scroll_line == request.scroll_line
+            && self.request.viewport == request.viewport
+    }
 }
 
 impl PreviewRequest {
@@ -186,6 +192,7 @@ impl PreviewHandler for ArchivePreviewHandler {
                 let entries = entries
                     .into_iter()
                     .filter(|entry| entry.name != "..")
+                    .skip(request.scroll_line)
                     .map(|entry| match entry.is_dir {
                         true => format!("{}/", entry.name),
                         false => entry.name,
@@ -215,6 +222,7 @@ impl PreviewHandler for TextPreviewHandler {
     fn load(&self, request: PreviewRequest) -> PreviewBody {
         match core::read_text_lines_prefix(
             &request.target.path,
+            request.scroll_line,
             request.line_budget(),
             request.viewport.max_bytes,
         ) {
@@ -346,6 +354,31 @@ mod tests {
     }
 
     #[test]
+    fn text_handler_honors_scroll_line() {
+        let path =
+            std::env::temp_dir().join(format!("fileman-preview-{}-window.txt", std::process::id()));
+        fs::write(&path, "one\ntwo\nthree\nfour\n").unwrap();
+
+        let mut request = PreviewRequest::initial(target(path.clone()));
+        request.scroll_line = 2;
+        request.viewport.visible_lines = 1;
+        request.viewport.preload_lines = 1;
+        let body = load_local_preview(request);
+
+        fs::remove_file(path).unwrap();
+
+        assert!(matches!(
+            body,
+            PreviewBody::Text(TextPreview {
+                ref text,
+                first_line: 2,
+                loaded_lines: 2,
+                ..
+            }) if text == "three\nfour\n"
+        ));
+    }
+
+    #[test]
     fn cache_entry_matches_same_target_identity() {
         let target = target(PathBuf::from("/tmp/source.txt"));
         let request = PreviewRequest::initial(target.clone());
@@ -357,6 +390,7 @@ mod tests {
         );
 
         assert!(entry.matches_target(&target));
+        assert!(entry.matches_request(&PreviewRequest::initial(target.clone())));
         assert!(!entry.matches_target(&FileTarget {
             path: PathBuf::from("/tmp/other.txt"),
             name: "other.txt".to_string(),

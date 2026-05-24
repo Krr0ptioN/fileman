@@ -2,7 +2,7 @@ use std::{path::PathBuf, time::Duration};
 
 use gpui::{Context, Timer};
 
-use super::FilemanShell;
+use super::{FilemanShell, state::ShellPaneFocus};
 use crate::{
     core,
     features::file_browser::{
@@ -12,6 +12,7 @@ use crate::{
 };
 
 const PREVIEW_PRELOAD_DELAY: Duration = Duration::from_millis(750);
+const PREVIEW_SCROLL_STEP: usize = 1;
 
 impl FilemanShell {
     pub(super) fn load_panel(
@@ -21,6 +22,7 @@ impl FilemanShell {
         prefer_name: Option<String>,
         cx: &mut Context<Self>,
     ) {
+        self.flush_preview_memory();
         let generation = {
             let panel = self.panel_mut(side);
             BrowserCommandState::start_loading(panel, path.clone())
@@ -96,8 +98,12 @@ impl FilemanShell {
     }
 
     pub(super) fn toggle_preview(&mut self, target: FileTarget, cx: &mut Context<Self>) {
-        if self.preview.is_some() {
-            self.preview = None;
+        if self
+            .preview
+            .as_ref()
+            .is_some_and(|preview| preview.target() == &target)
+        {
+            self.hide_preview_pane();
             self.status = "preview closed".to_string();
             return;
         }
@@ -109,24 +115,143 @@ impl FilemanShell {
 
         self.preview_generation = self.preview_generation.wrapping_add(1).max(1);
         let generation = self.preview_generation;
+        let request = PreviewRequest::initial(target.clone());
         if let Some(preload) = self
             .preview_preload
             .as_ref()
-            .filter(|preload| preload.matches_target(&target))
+            .filter(|preload| preload.matches_request(&request))
         {
             self.preview = Some(PreviewState::loaded(
                 generation,
                 preload.request.clone(),
                 preload.body.clone(),
             ));
+            self.pane_focus = ShellPaneFocus::Preview;
             self.status = format!("preview {}", target.name);
             return;
         }
 
-        let request = PreviewRequest::initial(target.clone());
         self.status = format!("previewing {}", target.name);
         self.preview = Some(PreviewState::loading(generation, request.clone()));
+        self.pane_focus = ShellPaneFocus::Preview;
 
+        cx.spawn(async move |shell, cx| {
+            let body = cx
+                .background_executor()
+                .spawn({
+                    let request = request.clone();
+                    async move { load_local_preview(request) }
+                })
+                .await;
+
+            cx.update(|cx| {
+                let _ = shell.update(cx, |shell, cx| {
+                    let cache_entry = PreviewCacheEntry::new(request, body.clone());
+                    shell.preview_preload = Some(cache_entry);
+                    if let Some(preview) = shell.preview.as_mut()
+                        && preview.apply_result(generation, body)
+                    {
+                        shell.status = format!("preview {}", preview.target().name);
+                    }
+                    cx.notify();
+                });
+            })
+        })
+        .detach();
+    }
+
+    pub(super) fn hide_preview_pane(&mut self) {
+        self.preview = None;
+        self.pane_focus = ShellPaneFocus::Browser;
+        self.pane_focus_prefix = false;
+    }
+
+    pub(super) fn flush_preview_memory(&mut self) {
+        self.hide_preview_pane();
+        self.preview_preload = None;
+        self.preview_preload_generation = self.preview_preload_generation.wrapping_add(1).max(1);
+        self.preview_generation = self.preview_generation.wrapping_add(1).max(1);
+    }
+
+    pub(super) fn focus_browser_pane(&mut self) {
+        self.pane_focus = ShellPaneFocus::Browser;
+        self.pane_focus_prefix = false;
+        self.status = "browser pane".to_string();
+    }
+
+    pub(super) fn focus_preview_pane(&mut self) {
+        self.pane_focus_prefix = false;
+        if self.preview.is_some() {
+            self.pane_focus = ShellPaneFocus::Preview;
+            self.status = "preview pane".to_string();
+        } else {
+            self.pane_focus = ShellPaneFocus::Browser;
+            self.status = "no preview pane".to_string();
+        }
+    }
+
+    pub(super) fn focus_next_pane(&mut self) {
+        self.pane_focus_prefix = false;
+        match (self.pane_focus, self.preview.is_some()) {
+            (ShellPaneFocus::Browser, true) => self.focus_preview_pane(),
+            _ => self.focus_browser_pane(),
+        }
+    }
+
+    pub(super) fn preview_pane_focused(&self) -> bool {
+        self.pane_focus == ShellPaneFocus::Preview && self.preview.is_some()
+    }
+
+    pub(super) fn scroll_preview_lines(&mut self, delta: isize, cx: &mut Context<Self>) -> bool {
+        if !self.preview_pane_focused() {
+            return false;
+        }
+
+        let Some(preview) = self.preview.as_ref() else {
+            return false;
+        };
+        let mut request = preview.request.clone();
+        request.scroll_line = if delta.is_negative() {
+            request.scroll_line.saturating_sub(delta.unsigned_abs())
+        } else {
+            request.scroll_line.saturating_add(delta as usize)
+        };
+        if request.scroll_line == preview.request.scroll_line {
+            return true;
+        }
+
+        self.reload_visible_preview(request, cx);
+        true
+    }
+
+    pub(super) fn scroll_preview_page(&mut self, direction: isize, cx: &mut Context<Self>) -> bool {
+        let page = self
+            .preview
+            .as_ref()
+            .map(|preview| preview.request.viewport.visible_lines / 2)
+            .unwrap_or(0)
+            .max(PREVIEW_SCROLL_STEP);
+        self.scroll_preview_lines(direction.saturating_mul(page as isize), cx)
+    }
+
+    fn reload_visible_preview(&mut self, request: PreviewRequest, cx: &mut Context<Self>) {
+        self.preview_generation = self.preview_generation.wrapping_add(1).max(1);
+        let generation = self.preview_generation;
+
+        if let Some(preload) = self
+            .preview_preload
+            .as_ref()
+            .filter(|preload| preload.matches_request(&request))
+        {
+            self.preview = Some(PreviewState::loaded(
+                generation,
+                preload.request.clone(),
+                preload.body.clone(),
+            ));
+            return;
+        }
+
+        self.preview = Some(PreviewState::loading(generation, request.clone()));
         cx.spawn(async move |shell, cx| {
             let body = cx
                 .background_executor()

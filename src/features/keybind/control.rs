@@ -4,6 +4,9 @@ use gpui::KeyDownEvent;
 pub enum ControlAction {
     SwitchPanel,
     QuickJump,
+    PaneFocusPrefix,
+    PreviewPageDown,
+    PreviewPageUp,
 }
 
 pub fn control_action(event: &KeyDownEvent) -> Option<ControlAction> {
@@ -44,6 +47,9 @@ fn control_action_for_input(input: ControlInput<'_>) -> Option<ControlAction> {
         (false, "tab", _, _, _, _, false) => Some(ControlAction::SwitchPanel),
         (false, "i" | "I", true, false, false, false, _) => Some(ControlAction::SwitchPanel),
         (false, "g" | "G", true, false, false, false, _) => Some(ControlAction::QuickJump),
+        (false, "w" | "W", true, false, false, false, _) => Some(ControlAction::PaneFocusPrefix),
+        (false, "d" | "D", true, false, false, false, _) => Some(ControlAction::PreviewPageDown),
+        (false, "u" | "U", true, false, false, false, _) => Some(ControlAction::PreviewPageUp),
         _ => None,
     }
 }
@@ -89,6 +95,37 @@ mod tests {
         assert_eq!(
             control_action_for_input(ctrl_g),
             Some(ControlAction::QuickJump)
+        );
+    }
+
+    #[test]
+    fn maps_ctrl_w_to_pane_focus_prefix() {
+        let mut ctrl_w = input("w");
+        ctrl_w.control = true;
+        ctrl_w.modified = true;
+
+        assert_eq!(
+            control_action_for_input(ctrl_w),
+            Some(ControlAction::PaneFocusPrefix)
+        );
+    }
+
+    #[test]
+    fn maps_ctrl_d_and_ctrl_u_to_preview_page_navigation() {
+        let mut ctrl_d = input("d");
+        ctrl_d.control = true;
+        ctrl_d.modified = true;
+        assert_eq!(
+            control_action_for_input(ctrl_d),
+            Some(ControlAction::PreviewPageDown)
+        );
+
+        let mut ctrl_u = input("u");
+        ctrl_u.control = true;
+        ctrl_u.modified = true;
+        assert_eq!(
+            control_action_for_input(ctrl_u),
+            Some(ControlAction::PreviewPageUp)
         );
     }
 

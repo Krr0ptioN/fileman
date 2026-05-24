@@ -11,6 +11,12 @@ use crate::features::{
     layout::LayoutState,
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ShellPaneFocus {
+    Browser,
+    Preview,
+}
+
 pub(crate) struct FilemanShell {
     pub(super) primary: BrowserPanel,
     pub(super) secondary: BrowserPanel,
@@ -28,6 +34,8 @@ pub(crate) struct FilemanShell {
     pub(super) preview_generation: u64,
     pub(super) preview_preload: Option<PreviewCacheEntry>,
     pub(super) preview_preload_generation: u64,
+    pub(super) pane_focus: ShellPaneFocus,
+    pub(super) pane_focus_prefix: bool,
     pub(super) status: String,
 }
 
@@ -57,6 +65,8 @@ impl FilemanShell {
             preview_generation: 0,
             preview_preload: None,
             preview_preload_generation: 0,
+            pane_focus: ShellPaneFocus::Browser,
+            pane_focus_prefix: false,
             status: "normal".to_string(),
         };
         shell.load_panel(PanelSide::Left, start_path, None, cx);

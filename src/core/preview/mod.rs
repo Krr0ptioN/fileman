@@ -36,6 +36,7 @@ pub struct TextPreviewRead {
 
 pub fn read_text_lines_prefix(
     path: &Path,
+    first_line: usize,
     max_lines: usize,
     max_bytes: usize,
 ) -> anyhow::Result<TextPreviewRead> {
@@ -47,7 +48,7 @@ pub fn read_text_lines_prefix(
     let mut lines_read = 0usize;
     let mut bytes_read = 0usize;
 
-    while lines_read < max_lines {
+    while lines_read < first_line.saturating_add(max_lines) {
         line.clear();
         let read = reader.read_until(b'\n', &mut line)?;
         if read == 0 {
@@ -55,17 +56,20 @@ pub fn read_text_lines_prefix(
         }
 
         bytes_read += read;
+        if lines_read >= first_line {
+            text.push_str(&String::from_utf8_lossy(&line));
+        }
         lines_read += 1;
-        text.push_str(&String::from_utf8_lossy(&line));
 
         if bytes_read >= max_bytes {
             break;
         }
     }
 
+    let loaded_lines = lines_read.saturating_sub(first_line).min(max_lines);
     Ok(TextPreviewRead {
         text,
-        lines_read,
+        lines_read: loaded_lines,
         bytes_read,
         truncated: file_len
             .map(|len| (bytes_read as u64) < len)

@@ -17,6 +17,9 @@ impl FilemanShell {
         let Some(input) = navigation_input(event) else {
             return false;
         };
+        if self.preview_pane_focused() {
+            return false;
+        }
         let (key, rows) = self.held_navigation.rows_for(input);
 
         self.active_panel_mut().select_relative(key.delta(rows));
@@ -26,6 +29,7 @@ impl FilemanShell {
             event.keystroke.key,
             self.active_panel().selected_name()
         );
+        self.hide_preview_pane();
         self.schedule_preview_preload(cx);
         true
     }
@@ -63,12 +67,17 @@ impl FilemanShell {
         event: &KeyDownEvent,
         cx: &mut Context<Self>,
     ) -> bool {
+        if self.handle_pane_focus_key(event, cx) {
+            return true;
+        }
+
         match control_action(event) {
             Some(ControlAction::SwitchPanel) => {
                 self.active = self.active.other();
                 self.ensure_panel_loaded(self.active, cx);
                 self.active_panel().reveal_selected();
                 self.status = format!("active {}", self.active.label());
+                self.hide_preview_pane();
                 self.schedule_preview_preload(cx);
                 true
             }
@@ -79,7 +88,45 @@ impl FilemanShell {
                 self.status = start_quick_jump(&mut self.input_mode, base);
                 true
             }
+            Some(ControlAction::PaneFocusPrefix) => {
+                self.pane_focus_prefix = true;
+                self.status = "pane".to_string();
+                true
+            }
+            Some(ControlAction::PreviewPageDown) => self.scroll_preview_page(1, cx),
+            Some(ControlAction::PreviewPageUp) => self.scroll_preview_page(-1, cx),
             None => false,
+        }
+    }
+
+    fn handle_pane_focus_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        if !self.pane_focus_prefix {
+            return false;
+        }
+        if event.is_held || event.keystroke.modifiers.modified() {
+            self.pane_focus_prefix = false;
+            return false;
+        }
+
+        match event.keystroke.key.as_str() {
+            "h" | "H" | "k" | "K" => {
+                self.focus_browser_pane();
+                true
+            }
+            "j" | "J" | "l" | "L" => {
+                self.focus_preview_pane();
+                true
+            }
+            "w" | "W" => {
+                self.focus_next_pane();
+                true
+            }
+            "d" | "D" => self.scroll_preview_page(1, cx),
+            "u" | "U" => self.scroll_preview_page(-1, cx),
+            _ => {
+                self.pane_focus_prefix = false;
+                false
+            }
         }
     }
 }

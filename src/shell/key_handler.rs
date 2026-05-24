@@ -25,7 +25,7 @@ impl AppKeyHandler<Context<'_, FilemanShell>> for FilemanShell {
         self.vim_command.clear();
         self.help_popup_open = false;
         self.leader_map_open = false;
-        self.preview = None;
+        self.hide_preview_pane();
         self.status = "normal".to_string();
         true
     }
@@ -72,6 +72,14 @@ impl AppKeyHandler<Context<'_, FilemanShell>> for FilemanShell {
     }
 
     fn vim_char(&mut self, ch: char, cx: &mut Context<Self>) -> bool {
+        if self.preview_pane_focused() {
+            return match ch {
+                'j' | 'l' => self.scroll_preview_lines(1, cx),
+                'k' | 'h' => self.scroll_preview_lines(-1, cx),
+                _ => false,
+            };
+        }
+
         match apply_browser_vim_char(&mut self.vim_command, &self.keybinds, ch) {
             BrowserVimOutcome::Ignored => false,
             BrowserVimOutcome::Pending(status) => {
