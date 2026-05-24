@@ -49,6 +49,7 @@ impl RenderOnce for FilePanel {
         v_flex()
             .flex_1()
             .min_w(px(0.0))
+            .min_h(px(0.0))
             .h_full()
             .bg(tokens::BG_PANEL)
             .border_1()
@@ -61,7 +62,7 @@ impl RenderOnce for FilePanel {
             .overflow_hidden()
             .child(PanelHeader::new(&self.panel, self.active))
             .child(
-                div().flex_grow().p_1().child(
+                div().flex_grow().min_h(px(0.0)).p_1().child(
                     uniform_list(list_id, row_count, move |range, _, _| {
                         range
                             .map(|ix| {

@@ -1,4 +1,4 @@
-use gpui::{App, IntoElement, ParentElement, RenderOnce, Styled, Window};
+use gpui::{App, IntoElement, ParentElement, RenderOnce, Styled, Window, px};
 use gpui_component::{h_flex, v_flex};
 
 use super::LayoutVariant;
@@ -49,12 +49,14 @@ impl RenderOnce for PanelLayout {
         match LayoutVariant::resolve(window.viewport_size(), pane_mode) {
             LayoutVariant::SingleActive => v_flex()
                 .flex_grow()
+                .min_h(px(0.0))
                 .gap_2()
                 .p_2()
                 .child(self.single_panel())
                 .into_any_element(),
             LayoutVariant::DualStacked => v_flex()
                 .flex_grow()
+                .min_h(px(0.0))
                 .gap_2()
                 .p_2()
                 .child(FilePanel::new(
@@ -70,6 +72,7 @@ impl RenderOnce for PanelLayout {
                 .into_any_element(),
             LayoutVariant::DualSplit => h_flex()
                 .flex_grow()
+                .min_h(px(0.0))
                 .gap_2()
                 .p_2()
                 .child(FilePanel::new(

@@ -1,5 +1,5 @@
 use gpui::prelude::FluentBuilder;
-use gpui::{Context, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window};
+use gpui::{Context, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window, px};
 use gpui_component::{h_flex, v_flex};
 
 use super::FilemanShell;
@@ -20,6 +20,7 @@ impl Render for FilemanShell {
                 match LayoutVariant::resolve(window.viewport_size(), PaneMode::Dual) {
                     LayoutVariant::SingleActive | LayoutVariant::DualStacked => v_flex()
                         .flex_grow()
+                        .min_h(px(0.0))
                         .gap_2()
                         .p_2()
                         .child(FilePanel::new(
@@ -31,6 +32,7 @@ impl Render for FilemanShell {
                         .into_any_element(),
                     LayoutVariant::DualSplit => h_flex()
                         .flex_grow()
+                        .min_h(px(0.0))
                         .gap_2()
                         .p_2()
                         .child(FilePanel::new(

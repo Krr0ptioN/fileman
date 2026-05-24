@@ -28,6 +28,7 @@ impl RenderOnce for PreviewPanel {
         v_flex()
             .flex_1()
             .min_w(px(0.0))
+            .min_h(px(0.0))
             .h_full()
             .bg(tokens::BG_PANEL)
             .border_1()
@@ -83,6 +84,7 @@ fn preview_body(body: PreviewBody) -> impl IntoElement {
 
     v_flex()
         .flex_grow()
+        .min_h(px(0.0))
         .gap_2()
         .p_3()
         .overflow_y_scrollbar()
