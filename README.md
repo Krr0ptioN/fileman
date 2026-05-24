@@ -1,123 +1,128 @@
 # FileMan
 
-FileMan is a fast, responsive two-panel file manager built with Rust, egui, and blade-egui. Navigation stays snappy even in large directories by doing all I/O off the UI thread and streaming results into the view.
+FileMan is a keyboard-first file manager written in Rust. The current application
+direction is a GPUI shell with one browser pane by default, optional splits, and
+file previews presented in their own pane.
 
-![FileMan screenshot](etc/snapshots/tests/preview.png)
+The GPUI application is under active development. The legacy `fileman` binary and
+supporting modules remain in the repository while the new workflow is developed
+through `fileman-gpui`.
 
-## Features
-- **Dual-panel layout** with independent navigation, history (Alt+Left/Right), panel swap (Ctrl+U), and tab support.
-- **Async I/O** — directory loading streams in batches; all I/O runs off the UI thread so navigation never stalls.
-- **SFTP remote browsing** — connect to any SSH host (reads `~/.ssh/config`), navigate and operate on remote files as naturally as local ones.
-- **Remote search** (Alt+F7 on a remote panel) — runs `find` or `grep` over SSH; results stream back and open directly.
-- **Archive navigation** for zip, tar, tar.gz, and tar.bz2 — browse like regular folders, copy files out, or open with system apps.
-- **Preview** (F3): text with syntax highlighting, images (JPEG, PNG, GIF, WebP, BMP, TGA, HDR, DDS) including animated GIF, and archive listings.
-- **Inline editor** (F4) with syntax highlighting; create new files with Shift+F4.
-- **File operations**: copy (F5), move (F6), delete (F8), rename (Shift+F6), new directory (F7) — all work on local and remote panels, with a progress bar for large transfers.
-- **Search** (Alt+F7) by name or content, with wildcard and case-insensitive options; results displayed as a virtual folder you can navigate and operate on.
-- **Theming**: external theme files in `themes/` (JSON, YAML, or TOML), toggle with F9, pick with F10.
+## Current Experience
 
-## Keyboard Shortcuts
-| Key | Action |
-|-----|--------|
-| Enter | Open |
-| Shift+Enter | Open with system default app |
-| Tab / Ctrl+I | Switch panels |
-| Ctrl+U | Swap panels |
-| Alt+Left / Alt+Right | Back / forward |
-| Backspace / Ctrl+PgUp | Parent folder |
-| Ctrl+PgDn | Open selected |
-| Ctrl+Left / Ctrl+Right | Open selected dir in other panel |
-| F1 | Help |
-| F3 | Preview |
-| F4 | Edit |
-| Shift+F4 | New file |
-| F7 | New directory |
-| Insert | Mark / unmark |
-| Shift+F6 | Rename |
-| F5 | Copy |
-| F6 | Move |
-| F8 | Delete |
-| Space | Compute folder size |
-| Alt+F7 | Search |
-| Alt+Enter | Properties |
-| Ctrl+R | Refresh |
-| Ctrl+G | Quick jump |
-| F9 | Toggle theme |
-| F10 | Theme picker |
+- Single-pane browsing by default, with an optional second browser pane.
+- Vim-style navigation and file operations, including numeric movement counts.
+- A preview pane opened with `gp`, sharing the window with the active browser.
+- Background preview preloading after selection settles, with a loading skeleton
+  while work is in progress.
+- Bounded text reads and incremental extension when scrolling, so previewing a
+  text file does not require loading the complete file.
+- Pluggable preview handling for text, archive listings, and binary content.
+- Dot-hidden entries and `.gitignore` matches hidden independently by default.
+- Parent navigation with `h`, without a synthetic `..` entry in the listing.
 
-## Vim / Ranger Keys
-FileMan also accepts ranger-style normal-mode chains in browser panels. Counts
-work for movement and jumps, so `5j`, `3k`, `12G`, and `2gg` are valid.
+## Key Map
+
+### Browsing
 
 | Key | Action |
 |-----|--------|
-| j / k | Move down / up |
-| h / l | Parent folder / open |
-| gg / G | Top / bottom |
-| J / K | Half-page down / up |
-| H / L | Back / forward |
-| / / ? | Search by name / content |
-| v / uv | Mark / unmark all |
-| yy / dd / pp | Copy / move / confirm copy or move |
-| dD / x | Delete |
-| cw | Rename |
-| nf / nd | New file / new directory |
-| i / e / r | Preview / edit / open externally |
-| gt / gT | Next / previous tab |
-| gn / gc | New / close tab |
-| gh / gr | Home / filesystem root |
-| zt / zz / zb | Place selection top / center / bottom |
-| q | Close preview or picker |
+| `j` / `k` | Move down / up |
+| `J` / `K` | Move down / up by a page step |
+| `gg` / `G` | Jump to top / bottom |
+| `0` | Select the first row |
+| `h` / `l` | Open parent / open selected entry |
+| `s` | Toggle a second browser pane |
+| `w`, `Tab`, `Ctrl+I` | Switch browser pane |
+| `r` / `R` | Reload |
+| `gh` | Toggle dot-hidden entries |
+| `gH` | Toggle gitignored entries |
+| `Ctrl+G` | Quick jump |
+| `?` | Open the key map |
 
-## Build and Run
+Counts apply to movement and jumps, for example `5j` and `12G`.
+
+### Files and Selection
+
+| Key | Action |
+|-----|--------|
+| `v` | Toggle mark on selected entry |
+| `V` | Toggle all marks |
+| `uv` / `uV` | Clear marks |
+| `yy` | Copy selection |
+| `yp` / `yn` | Copy path / name |
+| `yf` / `yc` | Copy files / file contents |
+| `dd` | Mark selection for move |
+| `pp` | Paste |
+| `dD` / `x` | Delete |
+| `cw` / `C` | Rename |
+| `nd` | Create directory |
+| `gp` | Toggle preview pane |
+
+### Preview Pane
+
+| Key | Action |
+|-----|--------|
+| `gp` | Open or close preview for the selected entry |
+| `Ctrl+W`, then `j` or `l` | Focus preview pane |
+| `Ctrl+W`, then `h` or `k` | Focus browser pane |
+| `Ctrl+W`, then `w` | Toggle pane focus |
+| `j` / `l`, `k` / `h` | Scroll down / up while preview is focused |
+| `Ctrl+D` / `Ctrl+U` | Scroll preview by a half page |
+
+Moving the browser selection dismisses the displayed preview while retaining
+cached preview data within the current directory. Changing directory clears that
+cached state.
+
+## Architecture
+
+The GPUI code separates browsing state, input interpretation, presentation, and
+background work:
+
+| Path | Responsibility |
+|------|----------------|
+| `src/bin/fileman-gpui.rs` | GPUI application entry point |
+| `src/shell/` | App state, rendering, pane focus, and asynchronous operation execution |
+| `src/features/file_browser/` | Directory state, command effects, components, visibility policy, and preview handlers |
+| `src/features/keybind/` | Vim-style command registry and dispatch |
+| `src/features/clipboard/` | Clipboard state and copy/move behavior |
+| `src/features/layout/` | Single and dual browser pane layout policy |
+| `src/core/` | Filesystem models and shared low-level helpers |
+
+Directory reads and preview preparation run away from rendering. Preview content
+is modeled independently of its renderer, allowing format-specific handlers and
+future loading policies without coupling them to pane UI code.
+
+## Direction
+
+FileMan is moving toward a general pane and tab workspace, rather than treating
+two browser panels as the permanent default. The current preview system provides
+the first split-pane workflow and the foundation for:
+
+- additional file-format preview handlers;
+- navigable archive previews;
+- viewport-aware caching and preloading policies;
+- explicit memory offloading strategies for large content; and
+- tabs and more flexible pane arrangements.
+
+## Build and Verify
+
+Run the GPUI application:
+
 ```bash
-cargo build --release
-cargo run --release
+cargo run --bin fileman-gpui -- /path/to/dir
 ```
 
-Open in a specific directory:
-```bash
-cargo run --release -- /path/to/dir
-```
+Run the checks used for the current GPUI work:
 
-Enable verbose logging:
 ```bash
-RUST_LOG=info cargo run
-```
-
-### GPU Backend Notes
-If you see `NoSupportedDeviceFound`, blade-graphics couldn't find a supported GPU backend.
-On Linux, this usually means Vulkan drivers aren't available. You can either install Vulkan
-drivers or use the GLES fallback:
-```bash
-RUSTFLAGS="--cfg gles" cargo run
-```
-
-## App Bundling
-Install `cargo-bundle` from git (the crates.io release has a Windows bug):
-```bash
-cargo install cargo-bundle --git https://github.com/burtonageo/cargo-bundle
-```
-Then build the bundle:
-```bash
-cargo bundle --release
-```
-On macOS this produces a `.app` bundle, on Windows an `.msi` installer.
-Icons are configured in `Cargo.toml` via `package.metadata.bundle.icon`.
-
-## Linux Desktop Integration
-Install the binary, desktop entry, and icon to `~/.local` (the standard per-user prefix):
-```bash
-make install
-```
-To install system-wide instead:
-```bash
-sudo make install PREFIX=/usr
-```
-To remove:
-```bash
-make uninstall
+cargo fmt --check
+cargo test --lib
+cargo clippy --lib --bin fileman-gpui -- -D warnings
+cargo check --bin fileman-gpui
 ```
 
 ## Contributing
-See [CONTRIBUTING.md](CONTRIBUTING.md) for repository layout, testing, and code style.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for repository layout, testing, and code
+style.
