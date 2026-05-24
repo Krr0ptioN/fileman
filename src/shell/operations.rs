@@ -13,7 +13,15 @@ use crate::{
 
 const PREVIEW_PRELOAD_DELAY: Duration = Duration::from_millis(750);
 const PREVIEW_SCROLL_STEP: usize = 1;
+const PREVIEW_EXTENSION_BASELINE_LINES: usize = 5;
+const PREVIEW_PAGE_EXTENSION_MULTIPLIER: usize = 2;
 const STATUS_DEBOUNCE_DELAY: Duration = Duration::from_millis(80);
+
+#[derive(Clone, Copy)]
+enum PreviewScrollStrategy {
+    Line,
+    Page { page_lines: usize },
+}
 
 impl FilemanShell {
     pub(super) fn load_panel(
@@ -139,6 +147,7 @@ impl FilemanShell {
         self.preview_generation = self.preview_generation.wrapping_add(1).max(1);
         let generation = self.preview_generation;
         let request = PreviewRequest::initial(target.clone());
+        self.reset_preview_line_extension_sequence();
         if let Some(preload) = self
             .preview_preload
             .as_ref()
@@ -204,6 +213,7 @@ impl FilemanShell {
         self.preview_extension_generation =
             self.preview_extension_generation.wrapping_add(1).max(1);
         self.preview_extension_start_line = None;
+        self.reset_preview_line_extension_sequence();
     }
 
     pub(super) fn focus_browser_pane(&mut self) {
@@ -236,6 +246,29 @@ impl FilemanShell {
     }
 
     pub(super) fn scroll_preview_lines(&mut self, delta: isize, cx: &mut Context<Self>) -> bool {
+        self.scroll_preview_by_strategy(delta, PreviewScrollStrategy::Line, cx)
+    }
+
+    pub(super) fn scroll_preview_page(&mut self, direction: isize, cx: &mut Context<Self>) -> bool {
+        let page = self
+            .preview
+            .as_ref()
+            .map(|preview| preview.request.viewport.visible_lines / 2)
+            .unwrap_or(0)
+            .max(PREVIEW_SCROLL_STEP);
+        self.scroll_preview_by_strategy(
+            direction.saturating_mul(page as isize),
+            PreviewScrollStrategy::Page { page_lines: page },
+            cx,
+        )
+    }
+
+    fn scroll_preview_by_strategy(
+        &mut self,
+        delta: isize,
+        strategy: PreviewScrollStrategy,
+        cx: &mut Context<Self>,
+    ) -> bool {
         if !self.preview_pane_focused() {
             return false;
         }
@@ -257,29 +290,20 @@ impl FilemanShell {
             if let Some(preview) = self.preview.as_mut() {
                 preview.request = request;
             }
-            self.maybe_extend_visible_preview(cx);
+            self.maybe_extend_visible_preview(strategy, cx);
         } else if self.preview_can_extend_text() {
             self.preview_pending_scroll_line = Some(request.scroll_line);
-            self.maybe_extend_visible_preview(cx);
+            self.maybe_extend_visible_preview(strategy, cx);
         } else {
             self.reload_visible_preview(request, cx);
         }
         true
     }
 
-    pub(super) fn scroll_preview_page(&mut self, direction: isize, cx: &mut Context<Self>) -> bool {
-        let page = self
-            .preview
-            .as_ref()
-            .map(|preview| preview.request.viewport.visible_lines / 2)
-            .unwrap_or(0)
-            .max(PREVIEW_SCROLL_STEP);
-        self.scroll_preview_lines(direction.saturating_mul(page as isize), cx)
-    }
-
     fn reload_visible_preview(&mut self, request: PreviewRequest, cx: &mut Context<Self>) {
         self.preview_generation = self.preview_generation.wrapping_add(1).max(1);
         let generation = self.preview_generation;
+        self.reset_preview_line_extension_sequence();
 
         if let Some(preload) = self
             .preview_preload
@@ -335,7 +359,11 @@ impl FilemanShell {
         )
     }
 
-    fn maybe_extend_visible_preview(&mut self, cx: &mut Context<Self>) {
+    fn maybe_extend_visible_preview(
+        &mut self,
+        strategy: PreviewScrollStrategy,
+        cx: &mut Context<Self>,
+    ) {
         let Some(preview) = self.preview.as_ref() else {
             return;
         };
@@ -350,7 +378,7 @@ impl FilemanShell {
             .request
             .scroll_line
             .saturating_add(preview.request.viewport.visible_lines)
-            .saturating_add(preview.request.viewport.preload_lines);
+            .saturating_add(PREVIEW_EXTENSION_BASELINE_LINES);
         let loaded_end = text.loaded_end_line();
         if threshold < loaded_end {
             return;
@@ -361,9 +389,34 @@ impl FilemanShell {
 
         let mut request = preview.request.clone();
         request.scroll_line = loaded_end;
-        request.viewport.visible_lines = preview.request.viewport.preload_lines.max(8);
+        request.viewport.visible_lines = self.extension_lines_for_strategy(strategy);
         request.viewport.preload_lines = 0;
         self.extend_visible_preview(request, cx);
+    }
+
+    fn extension_lines_for_strategy(&mut self, strategy: PreviewScrollStrategy) -> usize {
+        match strategy {
+            PreviewScrollStrategy::Line => self.next_preview_line_extension_lines(),
+            PreviewScrollStrategy::Page { page_lines } => page_lines
+                .saturating_mul(PREVIEW_PAGE_EXTENSION_MULTIPLIER)
+                .max(PREVIEW_EXTENSION_BASELINE_LINES),
+        }
+    }
+
+    fn next_preview_line_extension_lines(&mut self) -> usize {
+        let lines = self.preview_line_extension_next.max(1);
+        let next = self
+            .preview_line_extension_prev
+            .saturating_add(self.preview_line_extension_next)
+            .max(lines);
+        self.preview_line_extension_prev = self.preview_line_extension_next;
+        self.preview_line_extension_next = next;
+        lines
+    }
+
+    fn reset_preview_line_extension_sequence(&mut self) {
+        self.preview_line_extension_prev = 1;
+        self.preview_line_extension_next = 2;
     }
 
     fn extend_visible_preview(&mut self, request: PreviewRequest, cx: &mut Context<Self>) {
