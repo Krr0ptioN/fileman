@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use gpui::{App, AppContext, Application, Bounds, WindowBounds, WindowOptions, px, size};
 use gpui_component::Root;
 
-use super::FilemanShell;
+use super::{FilemanShell, theme::install_fileman_theme};
 use crate::features::{
     clipboard::ClipboardState, file_browser::FilemanAssets, layout::LayoutState,
 };
@@ -13,6 +13,7 @@ pub fn run(start_path: Option<PathBuf>) {
         .with_assets(FilemanAssets)
         .run(move |app: &mut App| {
             gpui_component::init(app);
+            install_fileman_theme(app);
             app.set_global(ClipboardState::default());
             app.set_global(LayoutState::default());
             let start_path = start_path.clone();

@@ -18,13 +18,7 @@ impl FilemanShell {
     ) {
         let generation = {
             let panel = self.panel_mut(side);
-            panel.load_generation = panel.load_generation.wrapping_add(1);
-            panel.loading = true;
-            panel.error = None;
-            panel.path = path.clone();
-            panel.rows.clear();
-            panel.selected_index = 0;
-            panel.load_generation
+            BrowserCommandState::start_loading(panel, path.clone())
         };
         self.status = format!("loading {}", path.display());
 
@@ -43,6 +37,16 @@ impl FilemanShell {
             })
         })
         .detach();
+    }
+
+    pub(super) fn ensure_panel_loaded(&mut self, side: PanelSide, cx: &mut Context<Self>) {
+        let panel = self.panel_mut(side);
+        if panel.load_generation != 0 || panel.loading {
+            return;
+        }
+
+        let path = panel.path.clone();
+        self.load_panel(side, path, None, cx);
     }
 
     fn reload_panels_after_operation(&mut self, cx: &mut Context<Self>) {

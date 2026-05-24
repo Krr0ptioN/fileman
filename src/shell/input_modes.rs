@@ -53,10 +53,15 @@ impl FilemanShell {
         }
     }
 
-    pub(super) fn handle_control_key(&mut self, event: &KeyDownEvent) -> bool {
+    pub(super) fn handle_control_key(
+        &mut self,
+        event: &KeyDownEvent,
+        cx: &mut Context<Self>,
+    ) -> bool {
         match control_action(event) {
             Some(ControlAction::SwitchPanel) => {
                 self.active = self.active.other();
+                self.ensure_panel_loaded(self.active, cx);
                 self.active_panel().reveal_selected();
                 self.status = format!("active {}", self.active.label());
                 true

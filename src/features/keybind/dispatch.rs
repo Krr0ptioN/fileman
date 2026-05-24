@@ -10,7 +10,7 @@ pub enum KeyCommandAction {
 
 pub trait AppKeyHandler<Cx> {
     fn modal_key(&mut self, event: &KeyDownEvent, cx: &mut Cx) -> bool;
-    fn control_key(&mut self, event: &KeyDownEvent) -> bool;
+    fn control_key(&mut self, event: &KeyDownEvent, cx: &mut Cx) -> bool;
     fn cancel_key(&mut self, event: &KeyDownEvent) -> bool;
     fn help_key(&mut self, action: HelpAction) -> bool;
     fn help_open(&self) -> bool;
@@ -31,7 +31,7 @@ where
     H: AppKeyHandler<Cx>,
 {
     let reset_navigation = handler.modal_key(event, cx)
-        || handler.control_key(event)
+        || handler.control_key(event, cx)
         || handler.cancel_key(event)
         || handle_help_key(handler, event)
         || handle_leader_key(handler, event, cx);

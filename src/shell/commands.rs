@@ -5,9 +5,9 @@ use crate::features::{
     clipboard::apply_clipboard_effect as apply_clipboard_runtime_effect,
     file_browser::{
         BrowserCommand, BrowserCommandEffect, BrowserCommandOutcome, BrowserCommandState,
-        FileOperation, execute_browser_command,
+        FileOperation, PanelSide, execute_browser_command,
     },
-    layout::LayoutState,
+    layout::{LayoutState, PaneMode},
 };
 
 impl FilemanShell {
@@ -53,6 +53,10 @@ impl FilemanShell {
             BrowserCommandEffect::TogglePaneMode => {
                 let pane_mode =
                     LayoutState::update_global(cx, |layout, _| layout.toggle_pane_mode());
+                if pane_mode == PaneMode::Dual {
+                    self.ensure_panel_loaded(PanelSide::Left, cx);
+                    self.ensure_panel_loaded(PanelSide::Right, cx);
+                }
                 self.status = format!("{} pane mode", pane_mode.label());
             }
             BrowserCommandEffect::OpenHelp => {
@@ -67,6 +71,7 @@ impl FilemanShell {
         }
 
         if reveal_active {
+            self.ensure_panel_loaded(self.active, cx);
             self.active_panel().reveal_selected();
         }
     }

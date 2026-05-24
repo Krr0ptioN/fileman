@@ -43,6 +43,16 @@ impl<'a> BrowserCommandState<'a> {
         self.active_panel_mut().marked.clear();
     }
 
+    pub fn start_loading(panel: &mut BrowserPanel, path: std::path::PathBuf) -> u64 {
+        panel.load_generation = panel.load_generation.wrapping_add(1);
+        panel.loading = true;
+        panel.error = None;
+        panel.path = path;
+        panel.rows.clear();
+        panel.selected_index = 0;
+        panel.load_generation
+    }
+
     pub fn apply_loaded(
         panel: &mut BrowserPanel,
         path: std::path::PathBuf,
@@ -77,5 +87,144 @@ impl<'a> BrowserCommandState<'a> {
             }
         };
         Some(status)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashSet, path::PathBuf};
+
+    use super::*;
+    use crate::{
+        core::{DirEntry, EntryLocation},
+        features::file_browser::rows::{FileFormat, FileRow, RowKind},
+    };
+
+    fn row(name: &str) -> FileRow {
+        FileRow {
+            kind: RowKind::File(FileFormat::Text),
+            name: name.to_string(),
+            detail: String::new(),
+            path: PathBuf::from(format!("/tmp/{name}")),
+            is_dir: false,
+            is_executable: false,
+        }
+    }
+
+    fn entry(name: &str, is_dir: bool) -> DirEntry {
+        DirEntry {
+            name: name.to_string(),
+            is_dir,
+            is_symlink: false,
+            is_executable: false,
+            link_target: None,
+            location: EntryLocation::Fs(PathBuf::from(format!("/next/{name}"))),
+            size: None,
+            modified: None,
+        }
+    }
+
+    fn panel() -> BrowserPanel {
+        BrowserPanel {
+            side: PanelSide::Left,
+            title: "Primary",
+            path: PathBuf::from("/tmp"),
+            selected_index: 1,
+            rows: vec![row("old-a"), row("old-b")],
+            marked: HashSet::from([PathBuf::from("/tmp/old-a")]),
+            loading: false,
+            error: Some("previous error".to_string()),
+            load_generation: 7,
+            scroll_handle: Default::default(),
+        }
+    }
+
+    #[test]
+    fn start_loading_resets_browser_panel_load_state() {
+        let mut panel = panel();
+
+        let generation = BrowserCommandState::start_loading(&mut panel, PathBuf::from("/next"));
+
+        assert_eq!(generation, 8);
+        assert_eq!(panel.load_generation, 8);
+        assert!(panel.loading);
+        assert_eq!(panel.path, PathBuf::from("/next"));
+        assert_eq!(panel.selected_index, 0);
+        assert!(panel.rows.is_empty());
+        assert!(panel.error.is_none());
+    }
+
+    #[test]
+    fn apply_loaded_ignores_stale_generation() {
+        let mut panel = panel();
+        let before_rows = panel.rows.len();
+        let stale_generation = panel.load_generation + 1;
+
+        let status = BrowserCommandState::apply_loaded(
+            &mut panel,
+            PathBuf::from("/next"),
+            None,
+            stale_generation,
+            Ok(vec![entry("fresh", false)]),
+        );
+
+        assert!(status.is_none());
+        assert_eq!(panel.path, PathBuf::from("/tmp"));
+        assert_eq!(panel.rows.len(), before_rows);
+        assert_eq!(panel.selected_index, 1);
+    }
+
+    #[test]
+    fn apply_loaded_selects_preferred_name_and_retains_valid_marks() {
+        let mut panel = panel();
+        panel.marked = HashSet::from([
+            PathBuf::from("/next/keep.txt"),
+            PathBuf::from("/tmp/stale.txt"),
+        ]);
+        let generation = panel.load_generation;
+
+        let status = BrowserCommandState::apply_loaded(
+            &mut panel,
+            PathBuf::from("/next"),
+            Some("target.txt".to_string()),
+            generation,
+            Ok(vec![
+                entry("..", true),
+                entry("keep.txt", false),
+                entry("target.txt", false),
+            ]),
+        );
+
+        assert_eq!(status.as_deref(), Some("3 rows, selected target.txt"));
+        assert!(!panel.loading);
+        assert_eq!(panel.path, PathBuf::from("/next"));
+        assert_eq!(panel.selected_index, 2);
+        assert_eq!(panel.selected_name(), "target.txt");
+        assert_eq!(
+            panel.marked,
+            HashSet::from([PathBuf::from("/next/keep.txt")])
+        );
+        assert!(panel.error.is_none());
+    }
+
+    #[test]
+    fn apply_loaded_reports_errors_without_changing_generation() {
+        let mut panel = panel();
+        let generation = BrowserCommandState::start_loading(&mut panel, PathBuf::from("/next"));
+
+        let status = BrowserCommandState::apply_loaded(
+            &mut panel,
+            PathBuf::from("/next"),
+            None,
+            generation,
+            Err(anyhow::anyhow!("permission denied")),
+        );
+
+        assert_eq!(status.as_deref(), Some("cannot load /next"));
+        assert!(!panel.loading);
+        assert_eq!(panel.load_generation, 8);
+        assert!(panel.rows.is_empty());
+        assert_eq!(panel.selected_index, 0);
+        assert_eq!(panel.error.as_deref(), Some("permission denied"));
     }
 }

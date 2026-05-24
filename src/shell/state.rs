@@ -48,8 +48,7 @@ impl FilemanShell {
             operation_in_flight: false,
             status: "normal".to_string(),
         };
-        shell.load_panel(PanelSide::Left, start_path.clone(), None, cx);
-        shell.load_panel(PanelSide::Right, start_path, None, cx);
+        shell.load_panel(PanelSide::Left, start_path, None, cx);
         shell
     }
 

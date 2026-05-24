@@ -6,6 +6,7 @@ mod key_handler;
 mod operations;
 mod render;
 mod state;
+mod theme;
 
 pub use app::run;
 
