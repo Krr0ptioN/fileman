@@ -7,8 +7,8 @@ use crate::{
     core,
     features::file_browser::{
         BrowserCommandState, FileOperation, FileTarget, PanelSide, PreviewBody, PreviewCacheEntry,
-        PreviewPreloadDecision, PreviewRequest, PreviewState, load_local_preview,
-        preview_preload_decision,
+        PreviewPreloadDecision, PreviewRequest, PreviewState, hide_gitignored_entries,
+        load_local_preview, preview_preload_decision,
     },
 };
 
@@ -33,9 +33,12 @@ impl FilemanShell {
         cx: &mut Context<Self>,
     ) {
         self.flush_preview_memory();
-        let generation = {
+        let (generation, show_ignored) = {
             let panel = self.panel_mut(side);
-            BrowserCommandState::start_loading(panel, path.clone())
+            (
+                BrowserCommandState::start_loading(panel, path.clone()),
+                panel.show_ignored,
+            )
         };
         self.status = format!("loading {}", path.display());
 
@@ -43,7 +46,12 @@ impl FilemanShell {
             let load_path = path.clone();
             let result = cx
                 .background_executor()
-                .spawn(async move { core::read_fs_directory(&load_path) })
+                .spawn(async move {
+                    core::read_fs_directory(&load_path).map(|entries| match show_ignored {
+                        true => entries,
+                        false => hide_gitignored_entries(&load_path, entries),
+                    })
+                })
                 .await;
 
             cx.update(|cx| {

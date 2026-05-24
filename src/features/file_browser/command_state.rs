@@ -140,6 +140,7 @@ mod tests {
             selected_index: 1,
             rows: vec![row("old-a"), row("old-b")],
             show_hidden: false,
+            show_ignored: false,
             marked: HashSet::from([PathBuf::from("/tmp/old-a")]),
             loading: false,
             error: Some("previous error".to_string()),

@@ -15,6 +15,14 @@ pub(super) fn register(registry: &mut Registry) {
         false,
         |_| BrowserCommand::ToggleHidden,
     );
+    super::bind(
+        registry,
+        "gH",
+        "toggle gitignored entries",
+        "General",
+        false,
+        |_| BrowserCommand::ToggleIgnored,
+    );
     super::bind(registry, "w", "switch pane", "General", true, |_| {
         BrowserCommand::SwitchPanel
     });

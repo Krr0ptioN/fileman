@@ -110,6 +110,21 @@ fn execute_ready_command(
                 },
             )
         }
+        BrowserCommand::ToggleIgnored => {
+            let panel = state.active_panel_mut();
+            panel.show_ignored = !panel.show_ignored;
+            let status = match panel.show_ignored {
+                true => "showing gitignored entries",
+                false => "hiding gitignored entries",
+            };
+            BrowserCommandOutcome::status_effect(
+                status,
+                BrowserCommandEffect::LoadActive {
+                    path: panel.path.clone(),
+                    prefer_name: panel.selected_row().map(|row| row.name.clone()),
+                },
+            )
+        }
         BrowserCommand::SwitchPanel => {
             BrowserCommandOutcome::status(state.switch_panel()).reveal_active()
         }
@@ -168,6 +183,7 @@ mod tests {
             selected_index: 0,
             rows: vec![row("alpha", true), row("beta.txt", false)],
             show_hidden: false,
+            show_ignored: false,
             marked: HashSet::new(),
             loading: false,
             error: None,
@@ -320,6 +336,37 @@ mod tests {
 
         assert!(primary.show_hidden);
         assert_eq!(outcome.status.as_deref(), Some("showing hidden entries"));
+        assert!(matches!(
+            outcome.effect,
+            BrowserCommandEffect::LoadActive { ref path, prefer_name: None }
+                if path == &PathBuf::from("/tmp")
+        ));
+    }
+
+    #[test]
+    fn toggle_ignored_reloads_empty_panel_and_changes_visibility_mode() {
+        let mut primary = panel(PanelSide::Left);
+        primary.rows.clear();
+        let mut secondary = panel(PanelSide::Right);
+        let mut active = PanelSide::Left;
+        let mut input_mode = InputMode::Normal;
+        let mut pending_confirm = None;
+
+        let outcome = with_state(
+            &mut primary,
+            &mut secondary,
+            &mut active,
+            &mut input_mode,
+            &mut pending_confirm,
+            BrowserCommand::ToggleIgnored,
+            "gH",
+        );
+
+        assert!(primary.show_ignored);
+        assert_eq!(
+            outcome.status.as_deref(),
+            Some("showing gitignored entries")
+        );
         assert!(matches!(
             outcome.effect,
             BrowserCommandEffect::LoadActive { ref path, prefer_name: None }

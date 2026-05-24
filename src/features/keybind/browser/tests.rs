@@ -44,6 +44,7 @@ fn maps_selection_and_general_commands() {
     assert_eq!(command("uv", 1, false), Some(BrowserCommand::ClearMarks));
     assert_eq!(command("s", 1, false), Some(BrowserCommand::TogglePaneMode));
     assert_eq!(command("gh", 1, false), Some(BrowserCommand::ToggleHidden));
+    assert_eq!(command("gH", 1, false), Some(BrowserCommand::ToggleIgnored));
     assert_eq!(command("w", 1, false), Some(BrowserCommand::SwitchPanel));
     assert_eq!(command("r", 1, false), Some(BrowserCommand::Reload));
 }

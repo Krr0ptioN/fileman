@@ -23,6 +23,7 @@ pub enum BrowserCommand {
     Preview,
     TogglePaneMode,
     ToggleHidden,
+    ToggleIgnored,
     SwitchPanel,
     Reload,
     OpenHelp,
@@ -34,6 +35,7 @@ impl BrowserCommand {
             self,
             Self::OpenParent
                 | Self::ToggleHidden
+                | Self::ToggleIgnored
                 | Self::SwitchPanel
                 | Self::OpenHelp
                 | Self::NewDirectory

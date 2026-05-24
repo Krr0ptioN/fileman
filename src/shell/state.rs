@@ -93,6 +93,7 @@ impl FilemanShell {
             selected_index: 0,
             rows: Vec::new(),
             show_hidden: false,
+            show_ignored: false,
             marked: HashSet::new(),
             loading: false,
             error: None,

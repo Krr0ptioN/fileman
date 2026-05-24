@@ -12,6 +12,7 @@ pub struct BrowserPanel {
     pub selected_index: usize,
     pub rows: Vec<FileRow>,
     pub show_hidden: bool,
+    pub show_ignored: bool,
     pub marked: HashSet<PathBuf>,
     pub loading: bool,
     pub error: Option<String>,

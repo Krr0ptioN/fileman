@@ -1,10 +1,6 @@
-use std::path::{Path, PathBuf};
-
-use ignore::gitignore::GitignoreBuilder;
-
 use crate::core;
 
-use super::{FileTarget, rows::FileFormat};
+use super::{FileTarget, path_is_gitignored, rows::FileFormat};
 
 pub const DEFAULT_PREVIEW_VISIBLE_LINES: usize = 48;
 pub const DEFAULT_PREVIEW_PRELOAD_LINES: usize = 24;
@@ -210,46 +206,10 @@ pub fn classify_preview(target: &FileTarget) -> PreviewKind {
 }
 
 pub fn preview_preload_decision(target: &FileTarget) -> PreviewPreloadDecision {
-    match gitignore_root(&target.path)
-        .and_then(|root| is_gitignored(&root, &target.path))
-        .unwrap_or(false)
-    {
+    match path_is_gitignored(&target.path, target.is_dir) {
         true => PreviewPreloadDecision::SkipGitIgnored,
         false => PreviewPreloadDecision::Preload,
     }
-}
-
-fn gitignore_root(path: &Path) -> Option<PathBuf> {
-    path.parent()?
-        .ancestors()
-        .find(|directory| {
-            let marker = directory.join(".git");
-            marker.is_dir() || marker.is_file()
-        })
-        .map(Path::to_path_buf)
-}
-
-fn is_gitignored(root: &Path, path: &Path) -> Option<bool> {
-    let mut directories = path
-        .parent()?
-        .ancestors()
-        .take_while(|dir| *dir != root)
-        .collect::<Vec<_>>();
-    directories.push(root);
-    directories.reverse();
-
-    let mut builder = GitignoreBuilder::new(root);
-    for directory in directories {
-        let gitignore = directory.join(".gitignore");
-        if gitignore.is_file() {
-            let _ = builder.add(gitignore);
-        }
-    }
-
-    builder
-        .build()
-        .ok()
-        .map(|matcher| matcher.matched_path_or_any_parents(path, false).is_ignore())
 }
 
 trait PreviewHandler {
