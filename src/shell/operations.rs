@@ -2,7 +2,7 @@ use std::{path::PathBuf, time::Duration};
 
 use gpui::{Context, Timer};
 
-use super::{FilemanShell, state::ShellPaneFocus};
+use super::{StiffShell, state::ShellPaneFocus};
 use crate::{
     core,
     features::file_browser::{
@@ -24,7 +24,7 @@ enum PreviewScrollStrategy {
     Page { page_lines: usize },
 }
 
-impl FilemanShell {
+impl StiffShell {
     pub(super) fn load_panel(
         &mut self,
         side: PanelSide,

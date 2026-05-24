@@ -369,7 +369,7 @@ mod tests {
     #[test]
     fn text_handler_reads_only_line_budget() {
         let path =
-            std::env::temp_dir().join(format!("fileman-preview-{}-lines.txt", std::process::id()));
+            std::env::temp_dir().join(format!("stiff-preview-{}-lines.txt", std::process::id()));
         fs::write(&path, "one\ntwo\nthree\nfour\n").unwrap();
 
         let mut request = PreviewRequest::initial(target(path.clone()));
@@ -399,7 +399,7 @@ mod tests {
     #[test]
     fn text_handler_honors_scroll_line() {
         let path =
-            std::env::temp_dir().join(format!("fileman-preview-{}-window.txt", std::process::id()));
+            std::env::temp_dir().join(format!("stiff-preview-{}-window.txt", std::process::id()));
         fs::write(&path, "one\ntwo\nthree\nfour\n").unwrap();
 
         let mut request = PreviewRequest::initial(target(path.clone()));
@@ -514,7 +514,7 @@ mod tests {
 
     fn test_repository(suffix: &str) -> PathBuf {
         let root =
-            std::env::temp_dir().join(format!("fileman-preview-{}-{}", std::process::id(), suffix));
+            std::env::temp_dir().join(format!("stiff-preview-{}-{}", std::process::id(), suffix));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join(".git")).unwrap();
         fs::create_dir_all(root.join("generated")).unwrap();

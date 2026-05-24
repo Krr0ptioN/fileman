@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# GUI Smoke Test: launches fileman under Xvfb and exercises basic
+# GUI Smoke Test: launches stiff under Xvfb and exercises basic
 # keyboard interactions via xdotool.
 set -euo pipefail
 
 DISPLAY_NUM=99
 export DISPLAY=":${DISPLAY_NUM}"
-FILEMAN_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/target/release/fileman"
-SCREENSHOT_DIR="/tmp/fileman-gui-test"
+STIFF_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/target/release/stiff"
+SCREENSHOT_DIR="/tmp/stiff-gui-test"
 mkdir -p "${SCREENSHOT_DIR}"
 
 cleanup() {
   echo "Cleaning up..."
-  [[ -n "${FILEMAN_PID:-}" ]] && kill "${FILEMAN_PID}" 2>/dev/null || true
+  [[ -n "${STIFF_PID:-}" ]] && kill "${STIFF_PID}" 2>/dev/null || true
   [[ -n "${XVFB_PID:-}" ]] && kill "${XVFB_PID}" 2>/dev/null || true
   wait 2>/dev/null || true
 }
@@ -28,21 +28,21 @@ if ! kill -0 "${XVFB_PID}" 2>/dev/null; then
 fi
 echo "OK: Xvfb running (PID ${XVFB_PID})"
 
-echo "=== Launching fileman ==="
-RUST_LOG=warn "${FILEMAN_BIN}" tests/data/basic &
-FILEMAN_PID=$!
+echo "=== Launching stiff ==="
+RUST_LOG=warn "${STIFF_BIN}" tests/data/basic &
+STIFF_PID=$!
 sleep 3
 
-if ! kill -0 "${FILEMAN_PID}" 2>/dev/null; then
-  echo "FAIL: fileman crashed on startup"
+if ! kill -0 "${STIFF_PID}" 2>/dev/null; then
+  echo "FAIL: stiff crashed on startup"
   exit 1
 fi
-echo "OK: fileman running (PID ${FILEMAN_PID})"
+echo "OK: stiff running (PID ${STIFF_PID})"
 
 # Wait for window to appear
 echo "=== Waiting for window ==="
 for i in $(seq 1 15); do
-  WID=$(xdotool search --name "fileman" 2>/dev/null | head -1) || true
+  WID=$(xdotool search --name "stiff" 2>/dev/null | head -1) || true
   if [[ -n "${WID}" ]]; then
     break
   fi
@@ -50,7 +50,7 @@ for i in $(seq 1 15); do
 done
 
 if [[ -z "${WID:-}" ]]; then
-  echo "FAIL: Could not find fileman window after 15 seconds"
+  echo "FAIL: Could not find stiff window after 15 seconds"
   exit 1
 fi
 echo "OK: Window found (WID ${WID})"
@@ -155,14 +155,14 @@ sleep 0.3
 echo "OK: Sent Ctrl+U (panel swap)"
 
 # Verify process is still alive after all operations
-if kill -0 "${FILEMAN_PID}" 2>/dev/null; then
+if kill -0 "${STIFF_PID}" 2>/dev/null; then
   echo ""
   echo "=== ALL GUI SMOKE TESTS PASSED ==="
-  echo "fileman remained responsive throughout all interactions."
+  echo "stiff remained responsive throughout all interactions."
   echo "Screenshots saved to ${SCREENSHOT_DIR}/"
   exit 0
 else
   echo ""
-  echo "FAIL: fileman process died during testing"
+  echo "FAIL: stiff process died during testing"
   exit 1
 fi

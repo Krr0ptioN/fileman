@@ -25,7 +25,7 @@ impl RenderOnce for TitleBar {
                         div()
                             .text_color(tokens::TEXT_PRIMARY)
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child("FileMan"),
+                            .child("stiff"),
                     ),
             )
             .child(

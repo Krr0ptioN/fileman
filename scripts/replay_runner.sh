@@ -2,15 +2,15 @@
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-fileman_bin="${root_dir}/target/release/fileman"
+stiff_bin="${root_dir}/target/release/stiff"
 cases_dir="${root_dir}/tests/cases"
 out_dir="${root_dir}/tests/data/basic/out"
 
 cd "${root_dir}"
-cargo build --release --bin fileman
+cargo build --release --bin stiff
 
-if [[ ! -x "${fileman_bin}" ]]; then
-  echo "Missing fileman binary at ${fileman_bin}" >&2
+if [[ ! -x "${stiff_bin}" ]]; then
+  echo "Missing stiff binary at ${stiff_bin}" >&2
   exit 1
 fi
 
@@ -33,7 +33,7 @@ for case in "${cases[@]}"; do
   if [[ -d "${out_dir}" ]]; then
     find "${out_dir}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
   fi
-  "${fileman_bin}" --replay "${case}" || {
+  "${stiff_bin}" --replay "${case}" || {
     echo "Replay failed: ${case}" >&2
     failures=$((failures + 1))
   }

@@ -52,17 +52,17 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           mkdir -p dist
-          tar -C target/release -czf dist/fileman-linux-x86_64${{ matrix.suffix }}.tar.gz fileman
+          tar -C target/release -czf dist/stiff-linux-x86_64${{ matrix.suffix }}.tar.gz stiff
 
       - name: Package AppImage (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
           mkdir -p dist
-          cp target/release/bundle/appimage/fileman_*_x86_64.AppImage dist/fileman-linux-x86_64${{ matrix.suffix }}.AppImage
+          cp target/release/bundle/appimage/stiff_*_x86_64.AppImage dist/stiff-linux-x86_64${{ matrix.suffix }}.AppImage
 
       - name: Rebuild without self-update for packages (Linux Vulkan)
         if: matrix.os == 'ubuntu-latest' && matrix.variant == 'vulkan'
-        run: cargo build --release --bin fileman
+        run: cargo build --release --bin stiff
 
       - name: Package deb + rpm (Linux Vulkan)
         if: matrix.os == 'ubuntu-latest' && matrix.variant == 'vulkan'
@@ -84,35 +84,35 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           mkdir -p dist
-          APP=target/aarch64-apple-darwin/release/bundle/osx/FileMan.app
+          APP=target/aarch64-apple-darwin/release/bundle/osx/stiff.app
           codesign --sign - --deep --force "$APP"
           # ZIP for self-update compatibility
-          ditto -c -k --sequesterRsrc --keepParent "$APP" dist/fileman-macos-aarch64.zip
+          ditto -c -k --sequesterRsrc --keepParent "$APP" dist/stiff-macos-aarch64.zip
           # DMG for drag-to-install
           mkdir -p dmg_staging
           cp -R "$APP" dmg_staging/
           ln -s /Applications dmg_staging/Applications
-          hdiutil create -volname FileMan -srcfolder dmg_staging -ov -format UDZO dist/fileman-macos-aarch64.dmg
+          hdiutil create -volname stiff -srcfolder dmg_staging -ov -format UDZO dist/stiff-macos-aarch64.dmg
 
       # --- Windows ---
       - name: Build (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
-        run: cargo build --release --bin fileman --features self-update
+        run: cargo build --release --bin stiff --features self-update
 
       - name: Package zip (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Compress-Archive -Path target/release/fileman.exe -DestinationPath dist/fileman-windows-x86_64.zip
+          Compress-Archive -Path target/release/stiff.exe -DestinationPath dist/stiff-windows-x86_64.zip
 
       - name: Package MSI (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           cargo install cargo-wix
-          cargo wix init --force -B target/release/fileman.exe
+          cargo wix init --force -B target/release/stiff.exe
           cargo wix --no-build --nocapture
           Copy-Item target/wix/*.msi dist/
 

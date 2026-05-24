@@ -10,13 +10,13 @@ build:
 	cargo build --release
 
 install: build
-	install -Dm755 target/release/fileman $(BINDIR)/fileman
-	install -Dm644 etc/fileman.svg $(ICONDIR)/fileman.svg
-	sed 's|Exec=fileman|Exec=$(BINDIR)/fileman|' etc/fileman.desktop \
-		| install -Dm644 /dev/stdin $(APPDIR)/fileman.desktop
+	install -Dm755 target/release/stiff $(BINDIR)/stiff
+	install -Dm644 etc/stiff.svg $(ICONDIR)/stiff.svg
+	sed 's|Exec=stiff|Exec=$(BINDIR)/stiff|' etc/stiff.desktop \
+		| install -Dm644 /dev/stdin $(APPDIR)/stiff.desktop
 	@echo "Installed to $(PREFIX). Make sure $(BINDIR) is in your PATH."
 
 uninstall:
-	rm -f $(BINDIR)/fileman
-	rm -f $(APPDIR)/fileman.desktop
-	rm -f $(ICONDIR)/fileman.svg
+	rm -f $(BINDIR)/stiff
+	rm -f $(APPDIR)/stiff.desktop
+	rm -f $(ICONDIR)/stiff.svg

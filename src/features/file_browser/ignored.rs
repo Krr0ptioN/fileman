@@ -111,7 +111,7 @@ mod tests {
 
     fn test_repository(suffix: &str) -> PathBuf {
         let root =
-            std::env::temp_dir().join(format!("fileman-ignored-{}-{suffix}", std::process::id()));
+            std::env::temp_dir().join(format!("stiff-ignored-{}-{suffix}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join(".git")).unwrap();
         root

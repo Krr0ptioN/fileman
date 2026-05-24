@@ -17,7 +17,7 @@ pub use actions::{
     effective_targets, prepare_delete, selected_target, start_new_directory, start_quick_jump,
     start_rename, toggle_all_marks, toggle_marked,
 };
-pub use assets::FilemanAssets;
+pub use assets::StiffAssets;
 pub use command::{
     BrowserCommand, BrowserCommandEffect, BrowserCommandOutcome, BrowserCommandState,
     execute_browser_command,

@@ -3,7 +3,7 @@ use std::rc::Rc;
 use gpui::App;
 use gpui_component::{Theme, ThemeConfig, ThemeConfigColors, ThemeMode};
 
-pub(super) fn install_fileman_theme(cx: &mut App) {
+pub(super) fn install_stiff_theme(cx: &mut App) {
     let mut colors = ThemeConfigColors::default();
     colors.background = Some("#0a0a0a".into());
     colors.foreground = Some("#fafafa".into());
@@ -39,7 +39,7 @@ pub(super) fn install_fileman_theme(cx: &mut App) {
 
     let theme = Rc::new(ThemeConfig {
         is_default: true,
-        name: "FileMan Dark".into(),
+        name: "stiff Dark".into(),
         mode: ThemeMode::Dark,
         font_size: Some(13.0),
         font_family: Some(".SystemUIFont".into()),

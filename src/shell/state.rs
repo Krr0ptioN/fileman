@@ -20,7 +20,7 @@ pub(super) enum ShellPaneFocus {
     Preview,
 }
 
-pub(crate) struct FilemanShell {
+pub(crate) struct StiffShell {
     pub(super) primary: BrowserPanel,
     pub(super) secondary: BrowserPanel,
     pub(super) active: PanelSide,
@@ -48,7 +48,7 @@ pub(crate) struct FilemanShell {
     pub(super) status: String,
 }
 
-impl FilemanShell {
+impl StiffShell {
     pub(crate) fn new(
         focus_handle: FocusHandle,
         start_path: Option<PathBuf>,

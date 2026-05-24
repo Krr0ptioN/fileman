@@ -1,6 +1,6 @@
 use gpui::{Context, UpdateGlobal};
 
-use super::FilemanShell;
+use super::StiffShell;
 use crate::features::{
     clipboard::apply_clipboard_effect as apply_clipboard_runtime_effect,
     file_browser::{
@@ -10,7 +10,7 @@ use crate::features::{
     layout::{LayoutState, PaneMode},
 };
 
-impl FilemanShell {
+impl StiffShell {
     pub(super) fn execute_browser_command(
         &mut self,
         command: BrowserCommand,

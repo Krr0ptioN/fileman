@@ -77,7 +77,7 @@ mod tests {
     #[test]
     fn directory_read_does_not_create_parent_row() {
         let directory = std::env::temp_dir().join(format!(
-            "fileman-directory-{}-without-parent",
+            "stiff-directory-{}-without-parent",
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&directory);

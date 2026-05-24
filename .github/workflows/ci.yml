@@ -82,7 +82,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libegl1 libvulkan1 mesa-vulkan-drivers
       - name: Build replay binary
-        run: cargo build --release --bin fileman
+        run: cargo build --release --bin stiff
       - name: Run replay cases
         run: scripts/replay_runner.sh
         env:

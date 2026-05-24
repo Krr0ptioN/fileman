@@ -1,14 +1,14 @@
 [package]
-name = "fileman"
+name = "stiff"
 version = "0.3.3"
-description = "Two-panel file manager"
+description = "Keyboard-first GPUI file manager"
 keywords = ["file-manager", "gpui"]
 categories = ["filesystem"]
 license = "MIT"
-repository = "https://github.com/kvark/fileman"
+repository = "https://github.com/kvark/stiff"
 authors = ["Dzmitry Malyshau"]
 edition = "2024"
-default-run = "fileman"
+default-run = "stiff"
 exclude = [
     "etc/snapshots/",
     "etc/macos/",
@@ -20,8 +20,8 @@ exclude = [
 ]
 
 [package.metadata.bundle]
-name = "FileMan"
-identifier = "com.fileman.app"
+name = "stiff"
+identifier = "com.stiff.app"
 icon = ["etc/macos/icon.png", "etc/windows/icon.ico"]
 
 [dependencies]
@@ -57,28 +57,24 @@ libc = "0.2"
 maintainer = "Dzmitry Malyshau"
 section = "utils"
 assets = [
-    ["target/release/fileman", "usr/bin/fileman", "755"],
-    ["etc/fileman.desktop", "usr/share/applications/fileman.desktop", "644"],
-    ["etc/fileman.svg", "usr/share/icons/hicolor/scalable/apps/fileman.svg", "644"],
+    ["target/release/stiff", "usr/bin/stiff", "755"],
+    ["etc/stiff.desktop", "usr/share/applications/stiff.desktop", "644"],
+    ["etc/stiff.svg", "usr/share/icons/hicolor/scalable/apps/stiff.svg", "644"],
 ]
 
 [package.metadata.generate-rpm]
 assets = [
-    { source = "target/release/fileman", dest = "/usr/bin/fileman", mode = "755" },
-    { source = "etc/fileman.desktop", dest = "/usr/share/applications/fileman.desktop", mode = "644" },
-    { source = "etc/fileman.svg", dest = "/usr/share/icons/hicolor/scalable/apps/fileman.svg", mode = "644" },
+    { source = "target/release/stiff", dest = "/usr/bin/stiff", mode = "755" },
+    { source = "etc/stiff.desktop", dest = "/usr/share/applications/stiff.desktop", mode = "644" },
+    { source = "etc/stiff.svg", dest = "/usr/share/icons/hicolor/scalable/apps/stiff.svg", mode = "644" },
 ]
 
 [features]
 vendored-openssl = ["ssh2/vendored-openssl"]
 
 [[bin]]
-name = "fileman"
+name = "stiff"
 path = "src/main.rs"
-
-[[bin]]
-name = "fileman-gpui"
-path = "src/bin/fileman-gpui.rs"
 
 [[bin]]
 name = "snapshot_compare"

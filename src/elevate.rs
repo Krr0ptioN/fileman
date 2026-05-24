@@ -319,7 +319,7 @@ fn elevated_mkdir(path: &Path) -> Result<(), String> {
 fn elevated_write_file(path: &Path, contents: &[u8]) -> Result<(), String> {
     // Write to a temp file, then elevated-copy over the target.
     let tmp_dir = std::env::temp_dir();
-    let tmp_name = format!("fileman_elev_{}", std::process::id());
+    let tmp_name = format!("stiff_elev_{}", std::process::id());
     let tmp_path = tmp_dir.join(&tmp_name);
 
     // Write with restrictive permissions on Unix.

@@ -1,6 +1,6 @@
 use gpui::{Context, KeyDownEvent};
 
-use super::FilemanShell;
+use super::StiffShell;
 use crate::features::{
     file_browser::{apply_confirm_action, apply_rename_action, start_quick_jump},
     keybind::{
@@ -8,7 +8,7 @@ use crate::features::{
     },
 };
 
-impl FilemanShell {
+impl StiffShell {
     pub(super) fn handle_navigation_key(
         &mut self,
         event: &KeyDownEvent,

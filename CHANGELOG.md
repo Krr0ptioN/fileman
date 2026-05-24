@@ -53,7 +53,7 @@
 ### Features
 - Support GLES for older systems (separate build)
 - Tab support (same keys as browsers)
-- Self-update: `fileman --update` checks GitHub releases and replaces the binary in-place (compile feature `self-update`, enabled for tarball/zip/AppImage/MSI, disabled for deb/rpm)
+- Self-update: `stiff --update` checks GitHub releases and replaces the binary in-place (compile feature `self-update`, enabled for tarball/zip/AppImage/MSI, disabled for deb/rpm)
 - Introspection about async tasks displayed in F1 help screen
 - Multi-stage JPEG loading for instant views
 - New image formats: TGA, HDR, and DDS

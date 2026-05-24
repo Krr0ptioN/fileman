@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=FileMan
-Comment=Two-panel file manager
-Exec=fileman %f
-Icon=fileman
+Name=stiff
+Comment=Keyboard-first file manager
+Exec=stiff %f
+Icon=stiff
 Categories=System;FileTools;FileManager;
 MimeType=inode/directory;
 Terminal=false
-StartupWMClass=fileman
+StartupWMClass=stiff

@@ -2,7 +2,7 @@ use gpui::prelude::FluentBuilder;
 use gpui::{Context, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window, px};
 use gpui_component::{h_flex, v_flex};
 
-use super::FilemanShell;
+use super::StiffShell;
 use crate::features::{
     file_browser::{
         CommandBar, FilePanel, HelpPopup, LayoutVariant, LeaderMap, PanelLayout, PreviewPanel,
@@ -11,7 +11,7 @@ use crate::features::{
     layout::PaneMode,
 };
 
-impl Render for FilemanShell {
+impl Render for StiffShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let panel_region = match self.preview.as_ref() {
             Some(preview) => {
@@ -67,7 +67,7 @@ impl Render for FilemanShell {
         let show_leader_map = !leader_entries.is_empty();
 
         v_flex()
-            .id("fileman-shell")
+            .id("stiff-shell")
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::on_key_down))
             .relative()

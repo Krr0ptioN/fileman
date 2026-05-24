@@ -1,14 +1,17 @@
-# FileMan
+# stiff
 
-FileMan is a keyboard-first file manager written in Rust. The current application
-direction is a GPUI shell with one browser pane by default, optional splits, and
-file previews presented in their own pane.
+stiff is a keyboard-first file manager aimed at fast, feature-rich file
+exploration.
 
-The GPUI application is under active development. The legacy `fileman` binary and
-supporting modules remain in the repository while the new workflow is developed
-through `fileman-gpui`.
+## Current Status
 
-## Current Experience
+The current application direction is a GPUI shell with one browser pane by default,
+optional splits, and file previews presented in their own pane.
+
+The application UI is under active development with GPUI, the UI framework
+developed by Zed. The single application binary is `stiff`.
+
+### Current Experience
 
 - Single-pane browsing by default, with an optional second browser pane.
 - Vim-style navigation and file operations, including numeric movement counts.
@@ -81,7 +84,7 @@ background work:
 
 | Path | Responsibility |
 |------|----------------|
-| `src/bin/fileman-gpui.rs` | GPUI application entry point |
+| `src/main.rs` | GPUI application entry point |
 | `src/shell/` | App state, rendering, pane focus, and asynchronous operation execution |
 | `src/features/file_browser/` | Directory state, command effects, components, visibility policy, and preview handlers |
 | `src/features/keybind/` | Vim-style command registry and dispatch |
@@ -89,13 +92,14 @@ background work:
 | `src/features/layout/` | Single and dual browser pane layout policy |
 | `src/core/` | Filesystem models and shared low-level helpers |
 
+
 Directory reads and preview preparation run away from rendering. Preview content
 is modeled independently of its renderer, allowing format-specific handlers and
 future loading policies without coupling them to pane UI code.
 
 ## Direction
 
-FileMan is moving toward a general pane and tab workspace, rather than treating
+stiff is moving toward a general pane and tab workspace, rather than treating
 two browser panels as the permanent default. The current preview system provides
 the first split-pane workflow and the foundation for:
 
@@ -110,7 +114,7 @@ the first split-pane workflow and the foundation for:
 Run the GPUI application:
 
 ```bash
-cargo run --bin fileman-gpui -- /path/to/dir
+cargo run --bin stiff -- /path/to/dir
 ```
 
 Run the checks used for the current GPUI work:
@@ -118,8 +122,8 @@ Run the checks used for the current GPUI work:
 ```bash
 cargo fmt --check
 cargo test --lib
-cargo clippy --lib --bin fileman-gpui -- -D warnings
-cargo check --bin fileman-gpui
+cargo clippy --lib --bin stiff -- -D warnings
+cargo check --bin stiff
 ```
 
 ## Contributing

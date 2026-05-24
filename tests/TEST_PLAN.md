@@ -1,8 +1,8 @@
-# FileMan — Comprehensive Test Plan
+# stiff - Comprehensive Test Plan
 
 ## Test Infrastructure
 
-FileMan uses a **replay-based headless testing system**. Tests are RON files in
+stiff uses a **replay-based headless testing system**. Tests are RON files in
 `tests/cases/` that specify a starting directory, a sequence of keyboard events,
 and assertions on panel state, filesystem state, file contents, or screenshots.
 

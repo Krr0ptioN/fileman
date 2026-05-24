@@ -1,9 +1,9 @@
 use gpui::{Context, KeyDownEvent, Window};
 
-use super::FilemanShell;
+use super::StiffShell;
 use crate::features::keybind::{KeyCommandAction, handle_key_command};
 
-impl FilemanShell {
+impl StiffShell {
     pub(super) fn on_key_down(
         &mut self,
         event: &KeyDownEvent,

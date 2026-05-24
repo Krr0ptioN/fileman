@@ -1,11 +1,11 @@
 use gpui::{Context, KeyDownEvent};
 
-use super::FilemanShell;
+use super::StiffShell;
 use crate::features::keybind::{
     AppKeyHandler, BrowserVimOutcome, HelpAction, apply_browser_vim_char,
 };
 
-impl AppKeyHandler<Context<'_, FilemanShell>> for FilemanShell {
+impl AppKeyHandler<Context<'_, StiffShell>> for StiffShell {
     fn modal_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
         self.handle_input_mode_key(event, cx) || self.handle_confirm_key(event, cx)
     }

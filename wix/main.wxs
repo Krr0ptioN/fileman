@@ -14,7 +14,7 @@
 
     <Product
         Id='*'
-        Name='FileMan'
+        Name='stiff'
         UpgradeCode='D223B1DB-2CE9-45F1-BB25-89D7ACE50E48'
         Manufacturer='Dzmitry Malyshau'
         Language='1033'
@@ -23,7 +23,7 @@
 
         <Package Id='*'
             Keywords='Installer'
-            Description='Two-panel file manager'
+            Description='Keyboard-first file manager'
             Manufacturer='Dzmitry Malyshau'
             InstallerVersion='450'
             Languages='1033'
@@ -36,11 +36,11 @@
             DowngradeErrorMessage='A newer version of [ProductName] is already installed. Setup will now exit.'/>
 
         <Media Id='1' Cabinet='media1.cab' EmbedCab='yes' DiskPrompt='CD-ROM #1'/>
-        <Property Id='DiskPrompt' Value='FileMan Installation'/>
+        <Property Id='DiskPrompt' Value='stiff Installation'/>
 
         <Directory Id='TARGETDIR' Name='SourceDir'>
             <Directory Id='$(var.PlatformProgramFilesFolder)' Name='PFiles'>
-                <Directory Id='APPLICATIONFOLDER' Name='FileMan'>
+                <Directory Id='APPLICATIONFOLDER' Name='stiff'>
                     <Component Id='License' Guid='*'>
                         <File Id='LicenseFile'
                             DiskId='1'
@@ -52,9 +52,9 @@
                         <Component Id='binary0' Guid='*'>
                             <File
                                 Id='exe0'
-                                Name='FileMan.exe'
+                                Name='stiff.exe'
                                 DiskId='1'
-                                Source='target/release/fileman.exe'
+                                Source='target/release/stiff.exe'
                                 KeyPath='yes'/>
                         </Component>
                     </Directory>
@@ -63,13 +63,13 @@
 
             <!-- Start Menu directory structure -->
             <Directory Id="ProgramMenuFolder">
-                <Directory Id="ApplicationProgramsFolder" Name="FileMan" />
+                <Directory Id="ApplicationProgramsFolder" Name="stiff" />
             </Directory>
         </Directory>
 
-        <Icon Id="FileManIcon" SourceFile="etc\windows\icon.ico" />
+        <Icon Id="StiffIcon" SourceFile="etc\windows\icon.ico" />
         <!-- Icon in Add/Remove Programs -->
-        <Property Id='ARPPRODUCTICON' Value='FileManIcon' />
+        <Property Id='ARPPRODUCTICON' Value='StiffIcon' />
 
         <!-- Icon in installer dialog banner -->
         <WixVariable Id="WixUIDialogBmp" Value="etc\windows\dialog.bmp" />
@@ -78,17 +78,17 @@
         <!-- Start Menu shortcut and cleanup -->
         <DirectoryRef Id="ApplicationProgramsFolder">
             <Component Id="StartMenuShortcut" Guid="*">
-                <Shortcut Id="FileManStartMenuShortcut"
-                          Name="FileMan"
-                          Description="Two-panel file manager"
-                          Target="[Bin]FileMan.exe"
-                          Icon="FileManIcon"
+                <Shortcut Id="StiffStartMenuShortcut"
+                          Name="stiff"
+                          Description="Keyboard-first file manager"
+                          Target="[Bin]stiff.exe"
+                          Icon="StiffIcon"
                           WorkingDirectory="Bin" />
                 <RemoveFolder Id="RemoveApplicationProgramsFolder"
                               Directory="ApplicationProgramsFolder"
                               On="uninstall" />
                 <RegistryValue Root="HKCU"
-                               Key="Software\Dzmitry Malyshau\FileMan"
+                               Key="Software\Dzmitry Malyshau\stiff"
                                Name="installed"
                                Type="integer"
                                Value="1"
@@ -113,7 +113,7 @@
 
         <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
 
-        <Property Id='ARPHELPLINK' Value='https://github.com/kvark/fileman'/>
+        <Property Id='ARPHELPLINK' Value='https://github.com/kvark/stiff'/>
 
         <UI>
             <UIRef Id='WixUI_FeatureTree'/>

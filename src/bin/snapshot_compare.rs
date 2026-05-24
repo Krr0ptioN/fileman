@@ -1,6 +1,6 @@
 use std::{env, path::PathBuf};
 
-use fileman::snapshot::compare_snapshots;
+use stiff::snapshot::compare_snapshots;
 
 fn parse_args() -> Result<(PathBuf, PathBuf, u8, f32), String> {
     let mut args = env::args().skip(1);

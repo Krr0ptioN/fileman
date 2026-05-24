@@ -10,4 +10,4 @@ mod theme;
 
 pub use app::run;
 
-pub(crate) use state::FilemanShell;
+pub(crate) use state::StiffShell;

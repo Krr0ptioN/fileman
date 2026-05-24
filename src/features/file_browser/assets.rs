@@ -2,9 +2,9 @@ use std::borrow::Cow;
 
 use gpui::{AssetSource, SharedString};
 
-pub struct FilemanAssets;
+pub struct StiffAssets;
 
-impl AssetSource for FilemanAssets {
+impl AssetSource for StiffAssets {
     fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
         Ok(lucide_svg(path).map(|svg| Cow::Borrowed(svg.as_bytes())))
     }
@@ -96,7 +96,7 @@ mod tests {
 
     #[test]
     fn lists_icon_names() {
-        let assets = FilemanAssets;
+        let assets = StiffAssets;
         let names = assets.list("icons").expect("icon list");
         assert!(names.iter().any(|name| name.as_ref() == "file.svg"));
         assert!(names.iter().any(|name| name.as_ref() == "settings.svg"));
