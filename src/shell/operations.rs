@@ -13,6 +13,7 @@ use crate::{
 
 const PREVIEW_PRELOAD_DELAY: Duration = Duration::from_millis(750);
 const PREVIEW_SCROLL_STEP: usize = 1;
+const STATUS_DEBOUNCE_DELAY: Duration = Duration::from_millis(80);
 
 impl FilemanShell {
     pub(super) fn load_panel(
@@ -91,6 +92,28 @@ impl FilemanShell {
                         Err(error) => shell.status = error.to_string(),
                     }
                     cx.notify();
+                });
+            })
+        })
+        .detach();
+    }
+
+    pub(super) fn set_status_debounced(&mut self, status: String, cx: &mut Context<Self>) {
+        self.status_debounce_generation = self.status_debounce_generation.wrapping_add(1).max(1);
+        let generation = self.status_debounce_generation;
+        let previous_status = self.status.clone();
+
+        cx.spawn(async move |shell, cx| {
+            Timer::after(STATUS_DEBOUNCE_DELAY).await;
+
+            cx.update(|cx| {
+                let _ = shell.update(cx, |shell, cx| {
+                    if shell.status_debounce_generation == generation
+                        && shell.status == previous_status
+                    {
+                        shell.status = status;
+                        cx.notify();
+                    }
                 });
             })
         })

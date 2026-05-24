@@ -27,7 +27,7 @@ impl FilemanShell {
             };
             execute_browser_command(&mut state, command, sequence)
         };
-        self.apply_browser_outcome(outcome, cx);
+        self.apply_browser_outcome_with_status_mode(outcome, command.reports_selection(), cx);
         true
     }
 
@@ -36,10 +36,23 @@ impl FilemanShell {
         outcome: BrowserCommandOutcome,
         cx: &mut Context<Self>,
     ) {
+        self.apply_browser_outcome_with_status_mode(outcome, false, cx);
+    }
+
+    fn apply_browser_outcome_with_status_mode(
+        &mut self,
+        outcome: BrowserCommandOutcome,
+        debounce_status: bool,
+        cx: &mut Context<Self>,
+    ) {
         let reveal_active = outcome.reveal_active;
 
         if let Some(status) = outcome.status {
-            self.status = status;
+            if debounce_status {
+                self.set_status_debounced(status, cx);
+            } else {
+                self.status = status;
+            }
         }
 
         match outcome.effect {

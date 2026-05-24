@@ -24,10 +24,13 @@ impl FilemanShell {
 
         self.active_panel_mut().select_relative(key.delta(rows));
         self.active_panel().reveal_selected();
-        self.status = format!(
-            "{} -> {}",
-            event.keystroke.key,
-            self.active_panel().selected_name()
+        self.set_status_debounced(
+            format!(
+                "{} -> {}",
+                event.keystroke.key,
+                self.active_panel().selected_name()
+            ),
+            cx,
         );
         self.hide_preview_pane();
         self.schedule_preview_preload(cx);

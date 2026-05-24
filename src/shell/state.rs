@@ -36,6 +36,7 @@ pub(crate) struct FilemanShell {
     pub(super) preview_preload_generation: u64,
     pub(super) pane_focus: ShellPaneFocus,
     pub(super) pane_focus_prefix: bool,
+    pub(super) status_debounce_generation: u64,
     pub(super) status: String,
 }
 
@@ -67,6 +68,7 @@ impl FilemanShell {
             preview_preload_generation: 0,
             pane_focus: ShellPaneFocus::Browser,
             pane_focus_prefix: false,
+            status_debounce_generation: 0,
             status: "normal".to_string(),
         };
         shell.load_panel(PanelSide::Left, start_path, None, cx);
