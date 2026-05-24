@@ -15,8 +15,8 @@ pub mod state;
 pub mod tokens;
 
 pub use actions::{
-    effective_targets, prepare_delete, selected_target, start_new_directory, start_rename,
-    toggle_all_marks, toggle_marked,
+    effective_targets, prepare_delete, selected_target, start_new_directory, start_quick_jump,
+    start_rename, toggle_all_marks, toggle_marked,
 };
 pub use assets::FilemanAssets;
 pub use command::BrowserCommand;

@@ -107,6 +107,14 @@ pub fn start_new_directory(input_mode: &mut InputMode, parent: std::path::PathBu
     "new directory: new_dir".to_string()
 }
 
+pub fn start_quick_jump(input_mode: &mut InputMode, base: std::path::PathBuf) -> String {
+    *input_mode = InputMode::QuickJump {
+        base,
+        input: String::new(),
+    };
+    "jump: ".to_string()
+}
+
 fn all_selectable_marked(panel: &BrowserPanel) -> bool {
     panel
         .rows

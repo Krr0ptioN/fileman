@@ -10,6 +10,7 @@ pub fn apply_rename_action(
     match input_mode {
         InputMode::Rename { .. } => Some(apply_rename_mode_action(input_mode, action)),
         InputMode::NewDirectory { .. } => Some(apply_new_directory_action(input_mode, action)),
+        InputMode::QuickJump { .. } => Some(apply_quick_jump_action(input_mode, action)),
         InputMode::Normal => None,
     }
 }
@@ -94,6 +95,64 @@ fn directory_name_error(name: &str) -> Option<&'static str> {
         "." | ".." => Some("invalid directory name"),
         _ if name.contains(std::path::MAIN_SEPARATOR) => Some("invalid directory name"),
         _ => None,
+    }
+}
+
+fn apply_quick_jump_action(
+    input_mode: &mut InputMode,
+    action: RenameModeAction,
+) -> BrowserCommandOutcome {
+    let InputMode::QuickJump { base, input } = input_mode else {
+        unreachable!("quick jump action requires quick-jump input mode");
+    };
+
+    match action {
+        RenameModeAction::Cancel => {
+            *input_mode = InputMode::Normal;
+            BrowserCommandOutcome::status("jump cancelled")
+        }
+        RenameModeAction::Backspace => {
+            input.pop();
+            BrowserCommandOutcome::status(format!("jump: {input}"))
+        }
+        RenameModeAction::Submit => {
+            let base = base.clone();
+            let target = input.trim().to_string();
+            *input_mode = InputMode::Normal;
+            match target.is_empty() {
+                true => BrowserCommandOutcome::status("jump unchanged"),
+                false => BrowserCommandOutcome::status_effect(
+                    format!("jumping to {target}"),
+                    BrowserCommandEffect::LoadActive {
+                        path: quick_jump_path(base, target.as_str()),
+                        prefer_name: None,
+                    },
+                ),
+            }
+        }
+        RenameModeAction::Insert(ch) => {
+            input.push(ch);
+            BrowserCommandOutcome::status(format!("jump: {input}"))
+        }
+        RenameModeAction::Consume => BrowserCommandOutcome::effect(BrowserCommandEffect::None),
+    }
+}
+
+fn quick_jump_path(base: std::path::PathBuf, input: &str) -> std::path::PathBuf {
+    let path = match input {
+        "~" => std::env::var_os("HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from(input)),
+        _ if input.starts_with("~/") => std::env::var_os("HOME")
+            .map(std::path::PathBuf::from)
+            .map(|home| home.join(&input[2..]))
+            .unwrap_or_else(|| std::path::PathBuf::from(input)),
+        _ => std::path::PathBuf::from(input),
+    };
+
+    match path.is_absolute() {
+        true => path,
+        false => base.join(path),
     }
 }
 
@@ -211,5 +270,64 @@ mod tests {
 
         assert!(matches!(mode, InputMode::Normal));
         assert_eq!(outcome.status.as_deref(), Some("new directory cancelled"));
+    }
+
+    #[test]
+    fn quick_jump_submit_loads_absolute_path() {
+        let mut mode = InputMode::QuickJump {
+            base: PathBuf::from("/tmp"),
+            input: "/var/log".to_string(),
+        };
+
+        let outcome = apply_rename_action(&mut mode, RenameModeAction::Submit)
+            .expect("quick-jump mode should handle submit");
+
+        assert!(matches!(mode, InputMode::Normal));
+        assert_eq!(outcome.status.as_deref(), Some("jumping to /var/log"));
+        assert!(matches!(
+            outcome.effect,
+            BrowserCommandEffect::LoadActive { ref path, prefer_name: None }
+                if path == &PathBuf::from("/var/log")
+        ));
+    }
+
+    #[test]
+    fn quick_jump_submit_loads_relative_path_from_base() {
+        let mut mode = InputMode::QuickJump {
+            base: PathBuf::from("/tmp"),
+            input: "project/src".to_string(),
+        };
+
+        let outcome = apply_rename_action(&mut mode, RenameModeAction::Submit)
+            .expect("quick-jump mode should handle submit");
+
+        assert_eq!(outcome.status.as_deref(), Some("jumping to project/src"));
+        assert!(matches!(
+            outcome.effect,
+            BrowserCommandEffect::LoadActive { ref path, prefer_name: None }
+                if path == &PathBuf::from("/tmp/project/src")
+        ));
+    }
+
+    #[test]
+    fn quick_jump_cancel_and_empty_submit_do_not_load() {
+        let mut cancelled = InputMode::QuickJump {
+            base: PathBuf::from("/tmp"),
+            input: "project".to_string(),
+        };
+        let outcome = apply_rename_action(&mut cancelled, RenameModeAction::Cancel)
+            .expect("quick-jump mode should handle cancel");
+        assert!(matches!(cancelled, InputMode::Normal));
+        assert_eq!(outcome.status.as_deref(), Some("jump cancelled"));
+        assert!(matches!(outcome.effect, BrowserCommandEffect::None));
+
+        let mut empty = InputMode::QuickJump {
+            base: PathBuf::from("/tmp"),
+            input: " ".to_string(),
+        };
+        let outcome = apply_rename_action(&mut empty, RenameModeAction::Submit)
+            .expect("quick-jump mode should handle submit");
+        assert_eq!(outcome.status.as_deref(), Some("jump unchanged"));
+        assert!(matches!(outcome.effect, BrowserCommandEffect::None));
     }
 }

@@ -2,7 +2,7 @@ use gpui::{Context, KeyDownEvent};
 
 use super::FilemanShell;
 use crate::features::{
-    file_browser::{apply_confirm_action, apply_rename_action},
+    file_browser::{apply_confirm_action, apply_rename_action, start_quick_jump},
     keybind::{
         ControlAction, confirm_key_action, control_action, navigation_input, rename_key_action,
     },
@@ -64,6 +64,13 @@ impl FilemanShell {
                 self.ensure_panel_loaded(self.active, cx);
                 self.active_panel().reveal_selected();
                 self.status = format!("active {}", self.active.label());
+                true
+            }
+            Some(ControlAction::QuickJump) => {
+                self.vim_command.clear();
+                self.leader_map_open = false;
+                let base = self.active_panel().path.clone();
+                self.status = start_quick_jump(&mut self.input_mode, base);
                 true
             }
             None => false,

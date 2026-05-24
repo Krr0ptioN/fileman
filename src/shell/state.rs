@@ -92,6 +92,7 @@ impl FilemanShell {
         match (&self.input_mode, &self.pending_confirm) {
             (InputMode::Rename { .. }, _) => "rename".to_string(),
             (InputMode::NewDirectory { .. }, _) => "mkdir".to_string(),
+            (InputMode::QuickJump { .. }, _) => "jump".to_string(),
             (_, Some(_)) => "confirm".to_string(),
             _ if self.help_popup_open => "keys".to_string(),
             _ if self.leader_map_open => "leader".to_string(),

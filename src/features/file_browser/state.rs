@@ -94,6 +94,10 @@ pub enum InputMode {
         parent: std::path::PathBuf,
         input: String,
     },
+    QuickJump {
+        base: std::path::PathBuf,
+        input: String,
+    },
 }
 
 #[derive(Clone)]
