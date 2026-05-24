@@ -1,4 +1,4 @@
-use super::{
+use crate::features::file_browser::{
     FileRow,
     state::{BrowserPanel, InputMode, PanelSide, PendingConfirm},
 };

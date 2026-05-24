@@ -1363,7 +1363,7 @@ fn exif_orientation(image: &zune_image::image::Image) -> Option<u16> {
     let exif = image.metadata().exif()?;
     for field in exif {
         if field.tag == exif::Tag::Orientation
-            && let exif::Value::Short(values) = &field.value
+            && let exif::Value::Short(ref values) = field.value
         {
             return values.first().copied();
         }

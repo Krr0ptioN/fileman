@@ -354,17 +354,19 @@ impl FilemanShell {
     }
 
     fn preview_body_can_cover(&self, request: &PreviewRequest) -> bool {
-        match self.preview.as_ref().map(|preview| &preview.body) {
-            Some(PreviewBody::Text(text)) => text.contains_line(request.scroll_line),
-            Some(PreviewBody::Listing(listing)) => request.scroll_line < listing.entries.len(),
+        let Some(preview) = self.preview.as_ref() else {
+            return false;
+        };
+        match preview.body {
+            PreviewBody::Text(ref text) => text.contains_line(request.scroll_line),
+            PreviewBody::Listing(ref listing) => request.scroll_line < listing.entries.len(),
             _ => false,
         }
     }
 
     fn preview_can_extend_text(&self) -> bool {
-        matches!(
-            self.preview.as_ref().map(|preview| &preview.body),
-            Some(PreviewBody::Text(text)) if text.truncated
+        self.preview.as_ref().is_some_and(
+            |preview| matches!(preview.body, PreviewBody::Text(ref text) if text.truncated),
         )
     }
 
@@ -376,7 +378,7 @@ impl FilemanShell {
         let Some(preview) = self.preview.as_ref() else {
             return;
         };
-        let PreviewBody::Text(text) = &preview.body else {
+        let PreviewBody::Text(ref text) = preview.body else {
             return;
         };
         if !text.truncated {
@@ -457,9 +459,11 @@ impl FilemanShell {
                     }
                     if preview.body.merge_extension(body) {
                         if let Some(pending_scroll_line) = shell.preview_pending_scroll_line {
-                            let can_cover_pending = match &preview.body {
-                                PreviewBody::Text(text) => text.contains_line(pending_scroll_line),
-                                PreviewBody::Listing(listing) => {
+                            let can_cover_pending = match preview.body {
+                                PreviewBody::Text(ref text) => {
+                                    text.contains_line(pending_scroll_line)
+                                }
+                                PreviewBody::Listing(ref listing) => {
                                     pending_scroll_line < listing.entries.len()
                                 }
                                 _ => false,

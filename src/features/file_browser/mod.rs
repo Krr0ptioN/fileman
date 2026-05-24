@@ -1,9 +1,6 @@
 pub mod actions;
 pub mod assets;
 pub mod command;
-pub mod command_effect;
-pub mod command_executor;
-pub mod command_state;
 pub mod components;
 pub mod ignored;
 pub mod mode_action;
@@ -21,10 +18,10 @@ pub use actions::{
     start_rename, toggle_all_marks, toggle_marked,
 };
 pub use assets::FilemanAssets;
-pub use command::BrowserCommand;
-pub use command_effect::{BrowserCommandEffect, BrowserCommandOutcome};
-pub use command_executor::execute_browser_command;
-pub use command_state::BrowserCommandState;
+pub use command::{
+    BrowserCommand, BrowserCommandEffect, BrowserCommandOutcome, BrowserCommandState,
+    execute_browser_command,
+};
 pub use components::{
     CommandBar, FilePanel, HelpPopup, LayoutVariant, LeaderMap, PanelLayout, PreviewPanel, TitleBar,
 };

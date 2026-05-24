@@ -1,8 +1,12 @@
 use crate::features::clipboard::{ClipboardEffect, ClipboardKind};
 
 use super::{
-    BrowserCommand, BrowserCommandEffect, BrowserCommandOutcome, BrowserCommandState,
-    effective_targets, parent_navigation, selected_navigation, selected_target,
+    effect::{BrowserCommandEffect, BrowserCommandOutcome},
+    state::BrowserCommandState,
+    types::BrowserCommand,
+};
+use crate::features::file_browser::{
+    effective_targets, parent_navigation, prepare_delete, selected_navigation, selected_target,
     start_new_directory, start_rename, toggle_all_marks, toggle_marked,
 };
 
@@ -52,9 +56,7 @@ fn execute_ready_command(
             let marked = toggle_marked(state.active_panel_mut(), count);
             BrowserCommandOutcome::status(format!("{marked} marked")).reveal_active()
         }
-        ToggleAllMarks => {
-            BrowserCommandOutcome::status(toggle_all_marks(state.active_panel_mut()))
-        }
+        ToggleAllMarks => BrowserCommandOutcome::status(toggle_all_marks(state.active_panel_mut())),
         ClearMarks => {
             state.clear_marks();
             BrowserCommandOutcome::status("marks cleared")
@@ -67,22 +69,18 @@ fn execute_ready_command(
         CopyName => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
             ClipboardEffect::CopyName(selected_target(state.active_panel())),
         )),
-        CopyFileContents => {
-            BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
-                ClipboardEffect::CopyFileContents(selected_target(state.active_panel())),
-            ))
-        }
-        CopyFiles => {
-            BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
-                ClipboardEffect::CopyFiles(effective_targets(state.active_panel())),
-            ))
-        }
+        CopyFileContents => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
+            ClipboardEffect::CopyFileContents(selected_target(state.active_panel())),
+        )),
+        CopyFiles => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
+            ClipboardEffect::CopyFiles(effective_targets(state.active_panel())),
+        )),
         Paste => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
             ClipboardEffect::PasteInto(state.active_panel().path.clone()),
         )),
         Delete => {
             let targets = effective_targets(state.active_panel());
-            let status = super::prepare_delete(state.pending_confirm, targets);
+            let status = prepare_delete(state.pending_confirm, targets);
             BrowserCommandOutcome::status(status)
         }
         Rename => {
@@ -94,9 +92,7 @@ fn execute_ready_command(
             state.active_panel().path.clone(),
         )),
         Preview => preview_outcome(state),
-        TogglePaneMode => {
-            BrowserCommandOutcome::effect(BrowserCommandEffect::TogglePaneMode)
-        }
+        TogglePaneMode => BrowserCommandOutcome::effect(BrowserCommandEffect::TogglePaneMode),
         ToggleHidden => {
             let panel = state.active_panel_mut();
             panel.show_hidden = !panel.show_hidden;
@@ -127,9 +123,7 @@ fn execute_ready_command(
                 },
             )
         }
-        SwitchPanel => {
-            BrowserCommandOutcome::status(state.switch_panel()).reveal_active()
-        }
+        SwitchPanel => BrowserCommandOutcome::status(state.switch_panel()).reveal_active(),
         OpenHelp => BrowserCommandOutcome::effect(BrowserCommandEffect::OpenHelp),
         Reload => BrowserCommandOutcome::effect(BrowserCommandEffect::ReloadActive),
     }

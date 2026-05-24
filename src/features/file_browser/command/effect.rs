@@ -1,6 +1,7 @@
-use crate::features::clipboard::ClipboardEffect;
-
-use super::{ops::FileOperation, state::FileTarget};
+use crate::features::{
+    clipboard::ClipboardEffect,
+    file_browser::{FileOperation, FileTarget},
+};
 
 pub enum BrowserCommandEffect {
     None,

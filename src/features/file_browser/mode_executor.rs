@@ -7,7 +7,7 @@ pub fn apply_rename_action(
     input_mode: &mut InputMode,
     action: RenameModeAction,
 ) -> Option<BrowserCommandOutcome> {
-    match input_mode {
+    match *input_mode {
         InputMode::Rename { .. } => Some(apply_rename_mode_action(input_mode, action)),
         InputMode::NewDirectory { .. } => Some(apply_new_directory_action(input_mode, action)),
         InputMode::QuickJump { .. } => Some(apply_quick_jump_action(input_mode, action)),
@@ -19,7 +19,11 @@ fn apply_rename_mode_action(
     input_mode: &mut InputMode,
     action: RenameModeAction,
 ) -> BrowserCommandOutcome {
-    let InputMode::Rename { target, input } = input_mode else {
+    let InputMode::Rename {
+        ref target,
+        ref mut input,
+    } = *input_mode
+    else {
         unreachable!("rename mode action requires rename input mode");
     };
 
@@ -55,7 +59,11 @@ fn apply_new_directory_action(
     input_mode: &mut InputMode,
     action: RenameModeAction,
 ) -> BrowserCommandOutcome {
-    let InputMode::NewDirectory { parent, input } = input_mode else {
+    let InputMode::NewDirectory {
+        ref parent,
+        ref mut input,
+    } = *input_mode
+    else {
         unreachable!("new directory action requires new-directory input mode");
     };
 
@@ -102,7 +110,11 @@ fn apply_quick_jump_action(
     input_mode: &mut InputMode,
     action: RenameModeAction,
 ) -> BrowserCommandOutcome {
-    let InputMode::QuickJump { base, input } = input_mode else {
+    let InputMode::QuickJump {
+        ref base,
+        ref mut input,
+    } = *input_mode
+    else {
         unreachable!("quick jump action requires quick-jump input mode");
     };
 

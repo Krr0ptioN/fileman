@@ -18,7 +18,7 @@ impl PanelHeader {
     }
 
     fn status(&self) -> String {
-        match (&self.panel.loading, &self.panel.error) {
+        match (self.panel.loading, self.panel.error.as_ref()) {
             (true, _) => "loading".to_string(),
             (_, Some(error)) => error.clone(),
             _ if self.panel.show_hidden && self.panel.show_ignored => {

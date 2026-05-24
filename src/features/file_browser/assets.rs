@@ -13,7 +13,7 @@ impl AssetSource for FilemanAssets {
         if path == "icons" {
             Ok(LUCIDE_ASSETS
                 .iter()
-                .map(|(name, _)| SharedString::from(*name))
+                .map(|&(name, _)| SharedString::from(name))
                 .collect())
         } else {
             Ok(Vec::new())
@@ -80,7 +80,7 @@ fn lucide_svg(path: &str) -> Option<&'static str> {
     let name = path.strip_prefix("icons/").unwrap_or(path);
     LUCIDE_ASSETS
         .iter()
-        .find_map(|(asset_name, svg)| (*asset_name == name).then_some(*svg))
+        .find_map(|&(asset_name, svg)| (asset_name == name).then_some(svg))
 }
 
 #[cfg(test)]

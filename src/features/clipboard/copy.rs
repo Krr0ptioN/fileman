@@ -34,9 +34,9 @@ pub fn copy_file_contents(target: Option<FileTarget>, writer: &mut impl Clipboar
 }
 
 pub fn copy_files(targets: Vec<FileTarget>, writer: &mut impl ClipboardWriter) -> String {
-    match targets.as_slice() {
+    match *targets.as_slice() {
         [] => "nothing selected".to_string(),
-        [target] => copy_file_targets(
+        [ref target] => copy_file_targets(
             writer,
             target_paths(&targets),
             format!("copied file {} to clipboard", target.name),

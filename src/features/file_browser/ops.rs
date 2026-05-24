@@ -24,19 +24,26 @@ pub enum FileOperation {
 
 impl FileOperation {
     pub fn pending_status(&self) -> String {
-        match self {
-            Self::Paste { kind, targets, .. } => {
-                let op = match kind {
+        match *self {
+            Self::Paste {
+                ref kind,
+                ref targets,
+                ..
+            } => {
+                let op = match *kind {
                     ClipboardKind::Copy => "copying",
                     ClipboardKind::Move => "moving",
                 };
                 format!("{op} {} item(s)", targets.len())
             }
-            Self::Delete { targets } => format!("deleting {} item(s)", targets.len()),
-            Self::Rename { target, new_name } => {
+            Self::Delete { ref targets } => format!("deleting {} item(s)", targets.len()),
+            Self::Rename {
+                ref target,
+                ref new_name,
+            } => {
                 format!("renaming {} to {new_name}", target.name)
             }
-            Self::NewDirectory { path } => {
+            Self::NewDirectory { ref path } => {
                 format!("creating directory {}", path.display())
             }
         }

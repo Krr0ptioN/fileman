@@ -1,4 +1,7 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use gpui::{Context, FocusHandle};
 
@@ -85,11 +88,11 @@ impl FilemanShell {
         shell
     }
 
-    fn panel_factory(start_path: &PathBuf, title: &'static str, side: PanelSide) -> BrowserPanel {
+    fn panel_factory(start_path: &Path, title: &'static str, side: PanelSide) -> BrowserPanel {
         BrowserPanel {
             side,
             title,
-            path: start_path.clone(),
+            path: start_path.to_path_buf(),
             selected_index: 0,
             rows: Vec::new(),
             show_hidden: false,
@@ -125,10 +128,10 @@ impl FilemanShell {
 
     pub(super) fn command_mode_label(&self, cx: &Context<Self>) -> String {
         match (&self.input_mode, &self.pending_confirm) {
-            (InputMode::Rename { .. }, _) => "rename".to_string(),
-            (InputMode::NewDirectory { .. }, _) => "mkdir".to_string(),
-            (InputMode::QuickJump { .. }, _) => "jump".to_string(),
-            (_, Some(_)) => "confirm".to_string(),
+            (&InputMode::Rename { .. }, _) => "rename".to_string(),
+            (&InputMode::NewDirectory { .. }, _) => "mkdir".to_string(),
+            (&InputMode::QuickJump { .. }, _) => "jump".to_string(),
+            (_, &Some(_)) => "confirm".to_string(),
             _ if self.help_popup_open => "keys".to_string(),
             _ if self.leader_map_open => "leader".to_string(),
             _ => self

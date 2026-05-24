@@ -1,15 +1,10 @@
 use gpui::Global;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub enum PaneMode {
     Dual,
+    #[default]
     Single,
-}
-
-impl Default for PaneMode {
-    fn default() -> Self {
-        Self::Single
-    }
 }
 
 impl PaneMode {

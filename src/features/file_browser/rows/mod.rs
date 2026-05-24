@@ -22,8 +22,8 @@ pub struct FileRow {
 
 impl FileRow {
     pub fn from_entry(entry: core::DirEntry) -> Self {
-        let path = match &entry.location {
-            core::EntryLocation::Fs(path) => path.clone(),
+        let path = match entry.location {
+            core::EntryLocation::Fs(ref path) => path.clone(),
             _ => PathBuf::new(),
         };
         let kind = RowKind::from_entry(&entry, &path);

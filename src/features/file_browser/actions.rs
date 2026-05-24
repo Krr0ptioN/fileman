@@ -69,8 +69,8 @@ pub fn prepare_delete(pending: &mut Option<PendingConfirm>, targets: Vec<FileTar
         return "nothing selected".to_string();
     }
 
-    match pending {
-        Some(PendingConfirm::Delete(selected)) => {
+    match *pending {
+        Some(PendingConfirm::Delete(ref mut selected)) => {
             let status = delete_status(toggle_targets(selected, &targets));
             if selected.is_empty() {
                 *pending = None;

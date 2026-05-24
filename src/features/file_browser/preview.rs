@@ -101,7 +101,7 @@ impl TextPreview {
 impl PreviewBody {
     pub fn merge_extension(&mut self, extension: PreviewBody) -> bool {
         match (self, extension) {
-            (Self::Text(current), Self::Text(next)) => current.append(next),
+            (&mut Self::Text(ref mut current), Self::Text(next)) => current.append(next),
             _ => false,
         }
     }

@@ -16,7 +16,7 @@ pub fn prepare_clipboard(
     let label = kind.label();
     let mut clear_clipboard = false;
     let status = match &mut clipboard.op {
-        Some(clipboard) if clipboard.kind == kind => {
+        &mut Some(ref mut clipboard) if clipboard.kind == kind => {
             let changed = toggle_targets(&mut clipboard.targets, &targets);
             clear_clipboard = clipboard.targets.is_empty();
             selection_status(label, changed)

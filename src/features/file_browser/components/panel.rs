@@ -95,9 +95,11 @@ fn list_id(side: PanelSide) -> &'static str {
 
 fn delete_targets(pending_confirm: Option<&PendingConfirm>) -> HashSet<PathBuf> {
     match pending_confirm {
-        Some(PendingConfirm::Delete(targets)) => {
-            targets.iter().map(|target| target.path.clone()).collect()
-        }
+        Some(confirm) => match *confirm {
+            PendingConfirm::Delete(ref targets) => {
+                targets.iter().map(|target| target.path.clone()).collect()
+            }
+        },
         None => HashSet::new(),
     }
 }
