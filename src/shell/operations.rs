@@ -7,7 +7,8 @@ use crate::{
     core,
     features::file_browser::{
         BrowserCommandState, FileOperation, FileTarget, PanelSide, PreviewBody, PreviewCacheEntry,
-        PreviewRequest, PreviewState, load_local_preview,
+        PreviewPreloadDecision, PreviewRequest, PreviewState, load_local_preview,
+        preview_preload_decision,
     },
 };
 
@@ -524,11 +525,19 @@ impl FilemanShell {
                 .background_executor()
                 .spawn({
                     let request = request.clone();
-                    async move { load_local_preview(request) }
+                    async move {
+                        match preview_preload_decision(&request.target) {
+                            PreviewPreloadDecision::Preload => Some(load_local_preview(request)),
+                            PreviewPreloadDecision::SkipGitIgnored => None,
+                        }
+                    }
                 })
                 .await;
+            let Some(body) = body else {
+                return;
+            };
 
-            cx.update(|cx| {
+            let _ = cx.update(|cx| {
                 let _ = shell.update(cx, |shell, cx| {
                     if generation != shell.preview_preload_generation {
                         return;
@@ -548,7 +557,7 @@ impl FilemanShell {
                     shell.preview_preload = Some(entry);
                     cx.notify();
                 });
-            })
+            });
         })
         .detach();
     }

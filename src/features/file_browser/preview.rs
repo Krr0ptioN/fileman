@@ -1,3 +1,7 @@
+use std::path::{Path, PathBuf};
+
+use ignore::gitignore::GitignoreBuilder;
+
 use crate::core;
 
 use super::{FileTarget, rows::FileFormat};
@@ -48,6 +52,12 @@ pub enum PreviewKind {
     Archive,
     Binary,
     Text,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreviewPreloadDecision {
+    Preload,
+    SkipGitIgnored,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -197,6 +207,49 @@ pub fn classify_preview(target: &FileTarget) -> PreviewKind {
         FileFormat::Code | FileFormat::Text => PreviewKind::Text,
         _ => PreviewKind::Binary,
     }
+}
+
+pub fn preview_preload_decision(target: &FileTarget) -> PreviewPreloadDecision {
+    match gitignore_root(&target.path)
+        .and_then(|root| is_gitignored(&root, &target.path))
+        .unwrap_or(false)
+    {
+        true => PreviewPreloadDecision::SkipGitIgnored,
+        false => PreviewPreloadDecision::Preload,
+    }
+}
+
+fn gitignore_root(path: &Path) -> Option<PathBuf> {
+    path.parent()?
+        .ancestors()
+        .find(|directory| {
+            let marker = directory.join(".git");
+            marker.is_dir() || marker.is_file()
+        })
+        .map(Path::to_path_buf)
+}
+
+fn is_gitignored(root: &Path, path: &Path) -> Option<bool> {
+    let mut directories = path
+        .parent()?
+        .ancestors()
+        .take_while(|dir| *dir != root)
+        .collect::<Vec<_>>();
+    directories.push(root);
+    directories.reverse();
+
+    let mut builder = GitignoreBuilder::new(root);
+    for directory in directories {
+        let gitignore = directory.join(".gitignore");
+        if gitignore.is_file() {
+            let _ = builder.add(gitignore);
+        }
+    }
+
+    builder
+        .build()
+        .ok()
+        .map(|matcher| matcher.matched_path_or_any_parents(path, false).is_ignore())
 }
 
 trait PreviewHandler {
@@ -467,5 +520,44 @@ mod tests {
             name: "other.txt".to_string(),
             is_dir: false,
         }));
+    }
+
+    #[test]
+    fn skips_optimistic_preload_for_gitignored_target() {
+        let root = test_repository("ignored");
+        fs::write(root.join(".gitignore"), "generated/*\n").unwrap();
+        let target = target(root.join("generated/output.log"));
+
+        assert_eq!(
+            preview_preload_decision(&target),
+            PreviewPreloadDecision::SkipGitIgnored
+        );
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn nested_gitignore_whitelist_restores_optimistic_preload() {
+        let root = test_repository("whitelist");
+        fs::create_dir_all(root.join("generated")).unwrap();
+        fs::write(root.join(".gitignore"), "generated/*\n").unwrap();
+        fs::write(root.join("generated/.gitignore"), "!output.log\n").unwrap();
+        let target = target(root.join("generated/output.log"));
+
+        assert_eq!(
+            preview_preload_decision(&target),
+            PreviewPreloadDecision::Preload
+        );
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn test_repository(suffix: &str) -> PathBuf {
+        let root =
+            std::env::temp_dir().join(format!("fileman-preview-{}-{}", std::process::id(), suffix));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join(".git")).unwrap();
+        fs::create_dir_all(root.join("generated")).unwrap();
+        root
     }
 }

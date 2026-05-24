@@ -1816,6 +1816,7 @@ dependencies = [
  "gif",
  "gpui",
  "gpui-component",
+ "ignore",
  "image-webp",
  "kamadak-exif",
  "libc",

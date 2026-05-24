@@ -32,8 +32,9 @@ pub use mode_executor::{apply_confirm_action, apply_rename_action};
 pub use navigation::{PanelNavigation, parent_navigation, selected_navigation};
 pub use ops::FileOperation;
 pub use preview::{
-    BinaryPreview, PreviewBody, PreviewCacheEntry, PreviewKind, PreviewListing, PreviewRequest,
-    PreviewState, PreviewViewport, TextPreview, classify_preview, load_local_preview,
+    BinaryPreview, PreviewBody, PreviewCacheEntry, PreviewKind, PreviewListing,
+    PreviewPreloadDecision, PreviewRequest, PreviewState, PreviewViewport, TextPreview,
+    classify_preview, load_local_preview, preview_preload_decision,
 };
 pub use rows::FileRow;
 pub use selection::{delete_status, selection_status, toggle_targets};

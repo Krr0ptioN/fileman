@@ -46,6 +46,7 @@ gpui-component = "0.5.1"
 arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"] }
 syntect = "5"
 memchr = "2.7"
+ignore = "0.4"
 ssh2 = "0.9"
 dds = "0.2.0"
 
