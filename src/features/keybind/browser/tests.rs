@@ -1,5 +1,6 @@
-use super::{BrowserCommand, file_manager_keybinds};
+use super::{BrowserCommand, BrowserVimOutcome, apply_browser_vim_char, file_manager_keybinds};
 use crate::features::keybind::KeybindArgs;
+use crate::features::keybind::VimCommandState;
 
 fn command(sequence: &str, count: usize, explicit_count: bool) -> Option<BrowserCommand> {
     file_manager_keybinds().command_for(
@@ -32,6 +33,52 @@ fn maps_operations() {
     assert_eq!(command("yf", 1, false), Some(BrowserCommand::CopyFiles));
     assert_eq!(command("dD", 1, false), Some(BrowserCommand::Delete));
     assert_eq!(command("zz", 1, false), None);
+}
+
+#[test]
+fn maps_selection_and_general_commands() {
+    assert_eq!(command("v", 3, true), Some(BrowserCommand::ToggleMark(3)));
+    assert_eq!(command("V", 1, false), Some(BrowserCommand::ToggleAllMarks));
+    assert_eq!(command("uv", 1, false), Some(BrowserCommand::ClearMarks));
+    assert_eq!(command("s", 1, false), Some(BrowserCommand::TogglePaneMode));
+    assert_eq!(command("w", 1, false), Some(BrowserCommand::SwitchPanel));
+    assert_eq!(command("r", 1, false), Some(BrowserCommand::Reload));
+}
+
+#[test]
+fn vim_adapter_emits_pending_status_for_prefixes() {
+    let registry = file_manager_keybinds();
+    let mut state = VimCommandState::default();
+
+    assert!(matches!(
+        apply_browser_vim_char(&mut state, &registry, 'g'),
+        BrowserVimOutcome::Pending(ref status) if status == "g"
+    ));
+    assert!(matches!(
+        apply_browser_vim_char(&mut state, &registry, 'g'),
+        BrowserVimOutcome::Command {
+            command: BrowserCommand::Line(0),
+            ref sequence,
+        } if sequence == "gg"
+    ));
+}
+
+#[test]
+fn vim_adapter_replays_invalid_prefixed_key_as_new_command() {
+    let registry = file_manager_keybinds();
+    let mut state = VimCommandState::default();
+
+    assert!(matches!(
+        apply_browser_vim_char(&mut state, &registry, 'g'),
+        BrowserVimOutcome::Pending(_)
+    ));
+    assert!(matches!(
+        apply_browser_vim_char(&mut state, &registry, 'j'),
+        BrowserVimOutcome::Command {
+            command: BrowserCommand::Move(1),
+            ref sequence,
+        } if sequence == "j"
+    ));
 }
 
 #[test]

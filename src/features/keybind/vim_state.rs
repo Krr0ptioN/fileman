@@ -88,3 +88,89 @@ pub enum VimCommandStep {
         had_pending: bool,
     },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{VimCommandState, VimCommandStep};
+
+    fn is_prefix(sequence: &str) -> bool {
+        matches!(sequence, "g" | "y" | "d")
+    }
+
+    #[test]
+    fn builds_count_before_command() {
+        let mut state = VimCommandState::default();
+
+        assert!(matches!(
+            state.push_with_prefixes('1', is_prefix),
+            VimCommandStep::Pending
+        ));
+        assert!(matches!(
+            state.push_with_prefixes('2', is_prefix),
+            VimCommandStep::Pending
+        ));
+        assert_eq!(state.display().as_deref(), Some("12"));
+
+        assert!(matches!(
+            state.push_with_prefixes('j', is_prefix),
+            VimCommandStep::Execute {
+                ref sequence,
+                count: 12,
+                explicit_count: true,
+                had_pending: false,
+            } if sequence == "j"
+        ));
+        assert!(state.display().is_none());
+    }
+
+    #[test]
+    fn treats_zero_as_command_without_existing_count() {
+        let mut state = VimCommandState::default();
+
+        assert!(matches!(
+            state.push_with_prefixes('0', is_prefix),
+            VimCommandStep::Execute {
+                ref sequence,
+                count: 1,
+                explicit_count: false,
+                had_pending: false,
+            } if sequence == "0"
+        ));
+    }
+
+    #[test]
+    fn appends_zero_to_existing_count() {
+        let mut state = VimCommandState::default();
+
+        assert!(matches!(
+            state.push_with_prefixes('2', is_prefix),
+            VimCommandStep::Pending
+        ));
+        assert!(matches!(
+            state.push_with_prefixes('0', is_prefix),
+            VimCommandStep::Pending
+        ));
+        assert_eq!(state.display().as_deref(), Some("20"));
+    }
+
+    #[test]
+    fn tracks_pending_prefix_and_reports_completed_sequence() {
+        let mut state = VimCommandState::default();
+
+        assert!(matches!(
+            state.push_with_prefixes('g', is_prefix),
+            VimCommandStep::Pending
+        ));
+        assert_eq!(state.display().as_deref(), Some("g"));
+
+        assert!(matches!(
+            state.push_with_prefixes('g', is_prefix),
+            VimCommandStep::Execute {
+                ref sequence,
+                count: 1,
+                explicit_count: false,
+                had_pending: true,
+            } if sequence == "gg"
+        ));
+    }
+}
