@@ -27,75 +27,77 @@ fn execute_ready_command(
     state: &mut BrowserCommandState<'_>,
     command: BrowserCommand,
 ) -> BrowserCommandOutcome {
+    use BrowserCommand::*;
+
     match command {
-        BrowserCommand::Move(delta) | BrowserCommand::MovePage(delta) => {
+        Move(delta) | MovePage(delta) => {
             state.active_panel_mut().select_relative(delta);
             BrowserCommandOutcome::effect(BrowserCommandEffect::None)
         }
-        BrowserCommand::First => {
+        First => {
             state.active_panel_mut().select_line(0);
             BrowserCommandOutcome::effect(BrowserCommandEffect::None)
         }
-        BrowserCommand::Last => {
+        Last => {
             state.active_panel_mut().select_last();
             BrowserCommandOutcome::effect(BrowserCommandEffect::None)
         }
-        BrowserCommand::Line(line) => {
+        Line(line) => {
             state.active_panel_mut().select_line(line);
             BrowserCommandOutcome::effect(BrowserCommandEffect::None)
         }
-        BrowserCommand::OpenParent => parent_navigation(state.active_panel()).into_outcome(),
-        BrowserCommand::OpenSelected => selected_navigation(state.active_panel()).into_outcome(),
-        BrowserCommand::ToggleMark(count) => {
+        OpenParent => parent_navigation(state.active_panel()).into_outcome(),
+        OpenSelected => selected_navigation(state.active_panel()).into_outcome(),
+        ToggleMark(count) => {
             let marked = toggle_marked(state.active_panel_mut(), count);
             BrowserCommandOutcome::status(format!("{marked} marked")).reveal_active()
         }
-        BrowserCommand::ToggleAllMarks => {
+        ToggleAllMarks => {
             BrowserCommandOutcome::status(toggle_all_marks(state.active_panel_mut()))
         }
-        BrowserCommand::ClearMarks => {
+        ClearMarks => {
             state.clear_marks();
             BrowserCommandOutcome::status("marks cleared")
         }
-        BrowserCommand::Copy => clipboard_outcome(state, ClipboardKind::Copy),
-        BrowserCommand::MoveSelection => clipboard_outcome(state, ClipboardKind::Move),
-        BrowserCommand::CopyPath => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
+        Copy => clipboard_outcome(state, ClipboardKind::Copy),
+        MoveSelection => clipboard_outcome(state, ClipboardKind::Move),
+        CopyPath => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
             ClipboardEffect::CopyPath(selected_target(state.active_panel())),
         )),
-        BrowserCommand::CopyName => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
+        CopyName => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
             ClipboardEffect::CopyName(selected_target(state.active_panel())),
         )),
-        BrowserCommand::CopyFileContents => {
+        CopyFileContents => {
             BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
                 ClipboardEffect::CopyFileContents(selected_target(state.active_panel())),
             ))
         }
-        BrowserCommand::CopyFiles => {
+        CopyFiles => {
             BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
                 ClipboardEffect::CopyFiles(effective_targets(state.active_panel())),
             ))
         }
-        BrowserCommand::Paste => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
+        Paste => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
             ClipboardEffect::PasteInto(state.active_panel().path.clone()),
         )),
-        BrowserCommand::Delete => {
+        Delete => {
             let targets = effective_targets(state.active_panel());
             let status = super::prepare_delete(state.pending_confirm, targets);
             BrowserCommandOutcome::status(status)
         }
-        BrowserCommand::Rename => {
+        Rename => {
             let target = selected_target(state.active_panel());
             BrowserCommandOutcome::status(start_rename(state.input_mode, target))
         }
-        BrowserCommand::NewDirectory => BrowserCommandOutcome::status(start_new_directory(
+        NewDirectory => BrowserCommandOutcome::status(start_new_directory(
             state.input_mode,
             state.active_panel().path.clone(),
         )),
-        BrowserCommand::Preview => preview_outcome(state),
-        BrowserCommand::TogglePaneMode => {
+        Preview => preview_outcome(state),
+        TogglePaneMode => {
             BrowserCommandOutcome::effect(BrowserCommandEffect::TogglePaneMode)
         }
-        BrowserCommand::ToggleHidden => {
+        ToggleHidden => {
             let panel = state.active_panel_mut();
             panel.show_hidden = !panel.show_hidden;
             let status = match panel.show_hidden {
@@ -110,7 +112,7 @@ fn execute_ready_command(
                 },
             )
         }
-        BrowserCommand::ToggleIgnored => {
+        ToggleIgnored => {
             let panel = state.active_panel_mut();
             panel.show_ignored = !panel.show_ignored;
             let status = match panel.show_ignored {
@@ -125,11 +127,11 @@ fn execute_ready_command(
                 },
             )
         }
-        BrowserCommand::SwitchPanel => {
+        SwitchPanel => {
             BrowserCommandOutcome::status(state.switch_panel()).reveal_active()
         }
-        BrowserCommand::OpenHelp => BrowserCommandOutcome::effect(BrowserCommandEffect::OpenHelp),
-        BrowserCommand::Reload => BrowserCommandOutcome::effect(BrowserCommandEffect::ReloadActive),
+        OpenHelp => BrowserCommandOutcome::effect(BrowserCommandEffect::OpenHelp),
+        Reload => BrowserCommandOutcome::effect(BrowserCommandEffect::ReloadActive),
     }
 }
 
