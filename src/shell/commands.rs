@@ -36,6 +36,8 @@ impl FilemanShell {
         outcome: BrowserCommandOutcome,
         cx: &mut Context<Self>,
     ) {
+        let reveal_active = outcome.reveal_active;
+
         if let Some(status) = outcome.status {
             self.status = status;
         }
@@ -62,6 +64,10 @@ impl FilemanShell {
                 let path = self.active_panel().path.clone();
                 self.load_panel(self.active, path, None, cx);
             }
+        }
+
+        if reveal_active {
+            self.active_panel().reveal_selected();
         }
     }
 

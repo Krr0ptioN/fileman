@@ -16,6 +16,7 @@ impl FilemanShell {
         let (key, rows) = self.held_navigation.rows_for(input);
 
         self.active_panel_mut().select_relative(key.delta(rows));
+        self.active_panel().reveal_selected();
         self.status = format!(
             "{} -> {}",
             event.keystroke.key,

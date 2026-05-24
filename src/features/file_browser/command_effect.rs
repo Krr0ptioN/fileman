@@ -19,6 +19,7 @@ pub enum BrowserCommandEffect {
 pub struct BrowserCommandOutcome {
     pub status: Option<String>,
     pub effect: BrowserCommandEffect,
+    pub reveal_active: bool,
 }
 
 impl BrowserCommandOutcome {
@@ -26,6 +27,7 @@ impl BrowserCommandOutcome {
         Self {
             status: None,
             effect,
+            reveal_active: false,
         }
     }
 
@@ -33,6 +35,7 @@ impl BrowserCommandOutcome {
         Self {
             status: Some(status.into()),
             effect: BrowserCommandEffect::None,
+            reveal_active: false,
         }
     }
 
@@ -40,6 +43,12 @@ impl BrowserCommandOutcome {
         Self {
             status: Some(status.into()),
             effect,
+            reveal_active: false,
         }
+    }
+
+    pub fn reveal_active(mut self) -> Self {
+        self.reveal_active = true;
+        self
     }
 }

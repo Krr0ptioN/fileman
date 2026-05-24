@@ -18,6 +18,7 @@ pub fn execute_browser_command(
     let mut outcome = execute_ready_command(state, command);
     if command.reports_selection() {
         outcome.status = Some(format!("{sequence} -> {}", state.selected_name()));
+        outcome = outcome.reveal_active();
     }
     outcome
 }
@@ -47,7 +48,7 @@ fn execute_ready_command(
         BrowserCommand::OpenSelected => selected_navigation(state.active_panel()).into_outcome(),
         BrowserCommand::ToggleMark(count) => {
             let marked = toggle_marked(state.active_panel_mut(), count);
-            BrowserCommandOutcome::status(format!("{marked} marked"))
+            BrowserCommandOutcome::status(format!("{marked} marked")).reveal_active()
         }
         BrowserCommand::ToggleAllMarks => {
             BrowserCommandOutcome::status(toggle_all_marks(state.active_panel_mut()))
@@ -89,7 +90,9 @@ fn execute_ready_command(
         BrowserCommand::TogglePaneMode => {
             BrowserCommandOutcome::effect(BrowserCommandEffect::TogglePaneMode)
         }
-        BrowserCommand::SwitchPanel => BrowserCommandOutcome::status(state.switch_panel()),
+        BrowserCommand::SwitchPanel => {
+            BrowserCommandOutcome::status(state.switch_panel()).reveal_active()
+        }
         BrowserCommand::OpenHelp => BrowserCommandOutcome::effect(BrowserCommandEffect::OpenHelp),
         BrowserCommand::Reload => BrowserCommandOutcome::effect(BrowserCommandEffect::ReloadActive),
     }
@@ -103,4 +106,195 @@ fn clipboard_outcome(
         kind,
         targets: effective_targets(state.active_panel()),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashSet, path::PathBuf};
+
+    use super::*;
+    use crate::features::file_browser::{
+        rows::{FileFormat, FileRow, RowKind},
+        state::{BrowserPanel, InputMode, PanelSide, PendingConfirm},
+    };
+
+    fn row(name: &str, is_dir: bool) -> FileRow {
+        FileRow {
+            kind: if is_dir {
+                RowKind::Directory
+            } else {
+                RowKind::File(FileFormat::Text)
+            },
+            name: name.to_string(),
+            detail: String::new(),
+            path: PathBuf::from(format!("/tmp/{name}")),
+            is_dir,
+            is_executable: false,
+        }
+    }
+
+    fn panel(side: PanelSide) -> BrowserPanel {
+        BrowserPanel {
+            side,
+            title: side.label(),
+            path: PathBuf::from("/tmp"),
+            selected_index: 1,
+            rows: vec![row("..", true), row("alpha", true), row("beta.txt", false)],
+            marked: HashSet::new(),
+            loading: false,
+            error: None,
+            load_generation: 0,
+            scroll_handle: Default::default(),
+        }
+    }
+
+    fn with_state(
+        primary: &mut BrowserPanel,
+        secondary: &mut BrowserPanel,
+        active: &mut PanelSide,
+        input_mode: &mut InputMode,
+        pending_confirm: &mut Option<PendingConfirm>,
+        command: BrowserCommand,
+        sequence: &str,
+    ) -> BrowserCommandOutcome {
+        let mut state = BrowserCommandState {
+            primary,
+            secondary,
+            active,
+            input_mode,
+            pending_confirm,
+        };
+        execute_browser_command(&mut state, command, sequence)
+    }
+
+    #[test]
+    fn navigation_commands_mutate_selection_and_request_reveal() {
+        let mut primary = panel(PanelSide::Left);
+        let mut secondary = panel(PanelSide::Right);
+        let mut active = PanelSide::Left;
+        let mut input_mode = InputMode::Normal;
+        let mut pending_confirm = None;
+
+        let outcome = with_state(
+            &mut primary,
+            &mut secondary,
+            &mut active,
+            &mut input_mode,
+            &mut pending_confirm,
+            BrowserCommand::Move(1),
+            "j",
+        );
+
+        assert_eq!(primary.selected_index, 2);
+        assert_eq!(outcome.status.as_deref(), Some("j -> beta.txt"));
+        assert!(outcome.reveal_active);
+        assert!(matches!(outcome.effect, BrowserCommandEffect::None));
+    }
+
+    #[test]
+    fn switch_panel_changes_active_side_and_requests_reveal() {
+        let mut primary = panel(PanelSide::Left);
+        let mut secondary = panel(PanelSide::Right);
+        let mut active = PanelSide::Left;
+        let mut input_mode = InputMode::Normal;
+        let mut pending_confirm = None;
+
+        let outcome = with_state(
+            &mut primary,
+            &mut secondary,
+            &mut active,
+            &mut input_mode,
+            &mut pending_confirm,
+            BrowserCommand::SwitchPanel,
+            "tab",
+        );
+
+        assert_eq!(active, PanelSide::Right);
+        assert_eq!(outcome.status.as_deref(), Some("active secondary"));
+        assert!(outcome.reveal_active);
+        assert!(matches!(outcome.effect, BrowserCommandEffect::None));
+    }
+
+    #[test]
+    fn rename_enters_input_mode_without_runtime_effects() {
+        let mut primary = panel(PanelSide::Left);
+        let mut secondary = panel(PanelSide::Right);
+        let mut active = PanelSide::Left;
+        let mut input_mode = InputMode::Normal;
+        let mut pending_confirm = None;
+
+        let outcome = with_state(
+            &mut primary,
+            &mut secondary,
+            &mut active,
+            &mut input_mode,
+            &mut pending_confirm,
+            BrowserCommand::Rename,
+            "cw",
+        );
+
+        assert_eq!(outcome.status.as_deref(), Some("rename: alpha"));
+        assert!(!outcome.reveal_active);
+        assert!(matches!(outcome.effect, BrowserCommandEffect::None));
+        assert!(matches!(
+            input_mode,
+            InputMode::Rename { ref input, .. } if input == "alpha"
+        ));
+    }
+
+    #[test]
+    fn delete_prepares_confirmation_without_shell_context() {
+        let mut primary = panel(PanelSide::Left);
+        let mut secondary = panel(PanelSide::Right);
+        let mut active = PanelSide::Left;
+        let mut input_mode = InputMode::Normal;
+        let mut pending_confirm = None;
+
+        let outcome = with_state(
+            &mut primary,
+            &mut secondary,
+            &mut active,
+            &mut input_mode,
+            &mut pending_confirm,
+            BrowserCommand::Delete,
+            "dD",
+        );
+
+        assert_eq!(
+            outcome.status.as_deref(),
+            Some("delete 1 item(s)? y/enter to confirm")
+        );
+        assert!(!outcome.reveal_active);
+        assert!(matches!(outcome.effect, BrowserCommandEffect::None));
+        assert!(matches!(
+            pending_confirm,
+            Some(PendingConfirm::Delete(ref targets)) if targets.len() == 1
+        ));
+    }
+
+    #[test]
+    fn opening_directory_returns_load_effect() {
+        let mut primary = panel(PanelSide::Left);
+        let mut secondary = panel(PanelSide::Right);
+        let mut active = PanelSide::Left;
+        let mut input_mode = InputMode::Normal;
+        let mut pending_confirm = None;
+
+        let outcome = with_state(
+            &mut primary,
+            &mut secondary,
+            &mut active,
+            &mut input_mode,
+            &mut pending_confirm,
+            BrowserCommand::OpenSelected,
+            "l",
+        );
+
+        assert!(!outcome.reveal_active);
+        assert!(matches!(
+            outcome.effect,
+            BrowserCommandEffect::LoadActive { ref path, prefer_name: None }
+                if path == &PathBuf::from("/tmp/alpha")
+        ));
+    }
 }

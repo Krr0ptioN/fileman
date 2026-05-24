@@ -39,7 +39,6 @@ pub fn toggle_marked(panel: &mut BrowserPanel, count: usize) -> usize {
         }
     }
 
-    panel.reveal_selected();
     panel.marked.len()
 }
 

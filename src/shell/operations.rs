@@ -98,6 +98,7 @@ impl FilemanShell {
             BrowserCommandState::apply_loaded(panel, path, prefer_name, generation, result)
         {
             self.status = status;
+            self.panel_mut(side).reveal_selected();
         }
     }
 }

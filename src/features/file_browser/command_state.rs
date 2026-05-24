@@ -36,7 +36,6 @@ impl<'a> BrowserCommandState<'a> {
 
     pub fn switch_panel(&mut self) -> String {
         *self.active = self.active.other();
-        self.active_panel().reveal_selected();
         format!("active {}", self.active.label())
     }
 
@@ -77,7 +76,6 @@ impl<'a> BrowserCommandState<'a> {
                 format!("cannot load {}", panel.path.display())
             }
         };
-        panel.reveal_selected();
         Some(status)
     }
 }

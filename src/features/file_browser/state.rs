@@ -22,7 +22,6 @@ impl BrowserPanel {
     pub fn select_relative(&mut self, delta: isize) {
         if self.rows.is_empty() {
             self.selected_index = 0;
-            self.reveal_selected();
             return;
         }
 
@@ -33,7 +32,6 @@ impl BrowserPanel {
                 .saturating_add(delta as usize)
                 .min(self.rows.len() - 1)
         };
-        self.reveal_selected();
     }
 
     pub fn select_line(&mut self, index: usize) {
@@ -42,14 +40,12 @@ impl BrowserPanel {
         } else {
             self.selected_index = index.min(self.rows.len() - 1);
         }
-        self.reveal_selected();
     }
 
     pub fn select_last(&mut self) {
         if !self.rows.is_empty() {
             self.selected_index = self.rows.len() - 1;
         }
-        self.reveal_selected();
     }
 
     pub fn reveal_selected(&self) {
