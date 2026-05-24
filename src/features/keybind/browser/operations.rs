@@ -44,4 +44,7 @@ pub(super) fn register(registry: &mut Registry) {
     super::bind(registry, "C", "rename", "Operations", false, |_| {
         BrowserCommand::Rename
     });
+    super::bind(registry, "nd", "new directory", "Operations", false, |_| {
+        BrowserCommand::NewDirectory
+    });
 }

@@ -86,7 +86,14 @@ impl FileTarget {
 
 pub enum InputMode {
     Normal,
-    Rename { target: FileTarget, input: String },
+    Rename {
+        target: FileTarget,
+        input: String,
+    },
+    NewDirectory {
+        parent: std::path::PathBuf,
+        input: String,
+    },
 }
 
 #[derive(Clone)]

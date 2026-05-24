@@ -17,6 +17,9 @@ pub enum FileOperation {
         target: FileTarget,
         new_name: String,
     },
+    NewDirectory {
+        path: std::path::PathBuf,
+    },
 }
 
 impl FileOperation {
@@ -32,6 +35,9 @@ impl FileOperation {
             Self::Delete { targets } => format!("deleting {} item(s)", targets.len()),
             Self::Rename { target, new_name } => {
                 format!("renaming {} to {new_name}", target.name)
+            }
+            Self::NewDirectory { path } => {
+                format!("creating directory {}", path.display())
             }
         }
     }
@@ -65,6 +71,10 @@ impl FileOperation {
                 let dst = target.path.with_file_name(&new_name);
                 fs::rename(&target.path, &dst)?;
                 Ok(format!("renamed {} to {new_name}", target.name))
+            }
+            Self::NewDirectory { path } => {
+                fs::create_dir(&path)?;
+                Ok(format!("created {}", path.display()))
             }
         }
     }

@@ -2,8 +2,8 @@ use crate::features::clipboard::{ClipboardEffect, ClipboardKind};
 
 use super::{
     BrowserCommand, BrowserCommandEffect, BrowserCommandOutcome, BrowserCommandState,
-    effective_targets, parent_navigation, selected_navigation, selected_target, start_rename,
-    toggle_all_marks, toggle_marked,
+    effective_targets, parent_navigation, selected_navigation, selected_target,
+    start_new_directory, start_rename, toggle_all_marks, toggle_marked,
 };
 
 pub fn execute_browser_command(
@@ -87,6 +87,10 @@ fn execute_ready_command(
             let target = selected_target(state.active_panel());
             BrowserCommandOutcome::status(start_rename(state.input_mode, target))
         }
+        BrowserCommand::NewDirectory => BrowserCommandOutcome::status(start_new_directory(
+            state.input_mode,
+            state.active_panel().path.clone(),
+        )),
         BrowserCommand::TogglePaneMode => {
             BrowserCommandOutcome::effect(BrowserCommandEffect::TogglePaneMode)
         }
@@ -239,6 +243,35 @@ mod tests {
         assert!(matches!(
             input_mode,
             InputMode::Rename { ref input, .. } if input == "alpha"
+        ));
+    }
+
+    #[test]
+    fn new_directory_enters_input_mode_without_rows() {
+        let mut primary = panel(PanelSide::Left);
+        primary.rows.clear();
+        let mut secondary = panel(PanelSide::Right);
+        let mut active = PanelSide::Left;
+        let mut input_mode = InputMode::Normal;
+        let mut pending_confirm = None;
+
+        let outcome = with_state(
+            &mut primary,
+            &mut secondary,
+            &mut active,
+            &mut input_mode,
+            &mut pending_confirm,
+            BrowserCommand::NewDirectory,
+            "nd",
+        );
+
+        assert_eq!(outcome.status.as_deref(), Some("new directory: new_dir"));
+        assert!(!outcome.reveal_active);
+        assert!(matches!(outcome.effect, BrowserCommandEffect::None));
+        assert!(matches!(
+            input_mode,
+            InputMode::NewDirectory { ref parent, ref input }
+                if parent == &PathBuf::from("/tmp") && input == "new_dir"
         ));
     }
 

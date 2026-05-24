@@ -19,6 +19,7 @@ pub enum BrowserCommand {
     Paste,
     Delete,
     Rename,
+    NewDirectory,
     TogglePaneMode,
     SwitchPanel,
     Reload,
@@ -27,7 +28,10 @@ pub enum BrowserCommand {
 
 impl BrowserCommand {
     pub fn requires_rows(self) -> bool {
-        !matches!(self, Self::OpenParent | Self::SwitchPanel | Self::OpenHelp)
+        !matches!(
+            self,
+            Self::OpenParent | Self::SwitchPanel | Self::OpenHelp | Self::NewDirectory
+        )
     }
 
     pub fn reports_selection(self) -> bool {

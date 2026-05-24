@@ -99,6 +99,14 @@ pub fn start_rename(input_mode: &mut InputMode, target: Option<FileTarget>) -> S
     }
 }
 
+pub fn start_new_directory(input_mode: &mut InputMode, parent: std::path::PathBuf) -> String {
+    *input_mode = InputMode::NewDirectory {
+        parent,
+        input: "new_dir".to_string(),
+    };
+    "new directory: new_dir".to_string()
+}
+
 fn all_selectable_marked(panel: &BrowserPanel) -> bool {
     panel
         .rows

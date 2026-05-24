@@ -32,6 +32,7 @@ fn maps_operations() {
     assert_eq!(command("yp", 1, false), Some(BrowserCommand::CopyPath));
     assert_eq!(command("yf", 1, false), Some(BrowserCommand::CopyFiles));
     assert_eq!(command("dD", 1, false), Some(BrowserCommand::Delete));
+    assert_eq!(command("nd", 1, false), Some(BrowserCommand::NewDirectory));
     assert_eq!(command("zz", 1, false), None);
 }
 
