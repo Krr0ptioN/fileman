@@ -20,6 +20,7 @@ pub enum BrowserCommand {
     Delete,
     Rename,
     NewDirectory,
+    Preview,
     TogglePaneMode,
     SwitchPanel,
     Reload,

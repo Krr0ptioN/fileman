@@ -1,6 +1,6 @@
 use crate::features::clipboard::ClipboardEffect;
 
-use super::ops::FileOperation;
+use super::{ops::FileOperation, state::FileTarget};
 
 pub enum BrowserCommandEffect {
     None,
@@ -11,6 +11,7 @@ pub enum BrowserCommandEffect {
     OpenWithSystem(std::path::PathBuf),
     Clipboard(ClipboardEffect),
     RunOperation(FileOperation),
+    Preview(FileTarget),
     TogglePaneMode,
     OpenHelp,
     ReloadActive,

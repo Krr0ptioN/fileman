@@ -9,6 +9,7 @@ pub mod mode_action;
 pub mod mode_executor;
 pub mod navigation;
 pub mod ops;
+pub mod preview;
 pub mod rows;
 pub mod selection;
 pub mod state;
@@ -24,12 +25,13 @@ pub use command_effect::{BrowserCommandEffect, BrowserCommandOutcome};
 pub use command_executor::execute_browser_command;
 pub use command_state::BrowserCommandState;
 pub use components::{
-    CommandBar, FilePanel, HelpPopup, LayoutVariant, LeaderMap, PanelLayout, TitleBar,
+    CommandBar, FilePanel, HelpPopup, LayoutVariant, LeaderMap, PanelLayout, PreviewPanel, TitleBar,
 };
 pub use mode_action::{ConfirmModeAction, RenameModeAction};
 pub use mode_executor::{apply_confirm_action, apply_rename_action};
 pub use navigation::{PanelNavigation, parent_navigation, selected_navigation};
 pub use ops::FileOperation;
+pub use preview::{PreviewBody, PreviewState, read_local_preview};
 pub use rows::FileRow;
 pub use selection::{delete_status, selection_status, toggle_targets};
 pub use state::{BrowserPanel, FileTarget, InputMode, PanelSide, PendingConfirm};

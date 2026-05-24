@@ -50,6 +50,7 @@ impl FilemanShell {
             BrowserCommandEffect::OpenWithSystem(path) => cx.open_with_system(&path),
             BrowserCommandEffect::Clipboard(effect) => self.apply_clipboard_effect(effect, cx),
             BrowserCommandEffect::RunOperation(operation) => self.run_operation(operation, cx),
+            BrowserCommandEffect::Preview(target) => self.toggle_preview(target, cx),
             BrowserCommandEffect::TogglePaneMode => {
                 let pane_mode =
                     LayoutState::update_global(cx, |layout, _| layout.toggle_pane_mode());

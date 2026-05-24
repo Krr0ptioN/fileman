@@ -4,17 +4,21 @@ use gpui_component::v_flex;
 
 use super::FilemanShell;
 use crate::features::file_browser::{
-    CommandBar, HelpPopup, LeaderMap, PanelLayout, TitleBar, tokens,
+    CommandBar, HelpPopup, LeaderMap, PanelLayout, PreviewPanel, TitleBar, tokens,
 };
 
 impl Render for FilemanShell {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let panel_region = PanelLayout::new(
-            &self.primary,
-            &self.secondary,
-            self.active,
-            self.pending_confirm.as_ref(),
-        );
+        let panel_region = match self.preview.as_ref() {
+            Some(preview) => PreviewPanel::new(preview).into_any_element(),
+            None => PanelLayout::new(
+                &self.primary,
+                &self.secondary,
+                self.active,
+                self.pending_confirm.as_ref(),
+            )
+            .into_any_element(),
+        };
         let leader_prefix = match self.leader_map_open {
             true => String::new(),
             false => self.vim_command.pending.clone(),

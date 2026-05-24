@@ -47,4 +47,12 @@ pub(super) fn register(registry: &mut Registry) {
     super::bind(registry, "nd", "new directory", "Operations", false, |_| {
         BrowserCommand::NewDirectory
     });
+    super::bind(
+        registry,
+        "gp",
+        "toggle preview",
+        "Operations",
+        false,
+        |_| BrowserCommand::Preview,
+    );
 }

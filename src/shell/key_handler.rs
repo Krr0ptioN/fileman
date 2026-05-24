@@ -25,6 +25,7 @@ impl AppKeyHandler<Context<'_, FilemanShell>> for FilemanShell {
         self.vim_command.clear();
         self.help_popup_open = false;
         self.leader_map_open = false;
+        self.preview = None;
         self.status = "normal".to_string();
         true
     }

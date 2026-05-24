@@ -3,7 +3,9 @@ use std::{collections::HashSet, path::PathBuf};
 use gpui::{Context, FocusHandle};
 
 use crate::features::{
-    file_browser::{BrowserCommand, BrowserPanel, InputMode, PanelSide, PendingConfirm},
+    file_browser::{
+        BrowserCommand, BrowserPanel, InputMode, PanelSide, PendingConfirm, PreviewState,
+    },
     keybind::{HeldNavigation, KeybindRegistry, VimCommandState, file_manager_keybinds},
     layout::LayoutState,
 };
@@ -21,6 +23,8 @@ pub(crate) struct FilemanShell {
     pub(super) help_popup_open: bool,
     pub(super) leader_map_open: bool,
     pub(super) operation_in_flight: bool,
+    pub(super) preview: Option<PreviewState>,
+    pub(super) preview_generation: u64,
     pub(super) status: String,
 }
 
@@ -46,6 +50,8 @@ impl FilemanShell {
             help_popup_open: false,
             leader_map_open: false,
             operation_in_flight: false,
+            preview: None,
+            preview_generation: 0,
             status: "normal".to_string(),
         };
         shell.load_panel(PanelSide::Left, start_path, None, cx);

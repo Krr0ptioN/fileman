@@ -5,7 +5,9 @@ use gpui::Context;
 use super::FilemanShell;
 use crate::{
     core,
-    features::file_browser::{BrowserCommandState, FileOperation, PanelSide},
+    features::file_browser::{
+        BrowserCommandState, FileOperation, FileTarget, PanelSide, PreviewState, read_local_preview,
+    },
 };
 
 impl FilemanShell {
@@ -81,6 +83,44 @@ impl FilemanShell {
                             shell.reload_panels_after_operation(cx);
                         }
                         Err(error) => shell.status = error.to_string(),
+                    }
+                    cx.notify();
+                });
+            })
+        })
+        .detach();
+    }
+
+    pub(super) fn toggle_preview(&mut self, target: FileTarget, cx: &mut Context<Self>) {
+        if self.preview.is_some() {
+            self.preview = None;
+            self.status = "preview closed".to_string();
+            return;
+        }
+
+        if target.is_dir {
+            self.status = "cannot preview directory".to_string();
+            return;
+        }
+
+        self.preview_generation = self.preview_generation.wrapping_add(1).max(1);
+        let generation = self.preview_generation;
+        let path = target.path.clone();
+        self.status = format!("previewing {}", target.name);
+        self.preview = Some(PreviewState::loading(generation, target));
+
+        cx.spawn(async move |shell, cx| {
+            let body = cx
+                .background_executor()
+                .spawn(async move { read_local_preview(path) })
+                .await;
+
+            cx.update(|cx| {
+                let _ = shell.update(cx, |shell, cx| {
+                    if let Some(preview) = shell.preview.as_mut()
+                        && preview.apply_result(generation, body)
+                    {
+                        shell.status = format!("preview {}", preview.target.name);
                     }
                     cx.notify();
                 });

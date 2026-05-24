@@ -91,6 +91,7 @@ fn execute_ready_command(
             state.input_mode,
             state.active_panel().path.clone(),
         )),
+        BrowserCommand::Preview => preview_outcome(state),
         BrowserCommand::TogglePaneMode => {
             BrowserCommandOutcome::effect(BrowserCommandEffect::TogglePaneMode)
         }
@@ -110,6 +111,13 @@ fn clipboard_outcome(
         kind,
         targets: effective_targets(state.active_panel()),
     }))
+}
+
+fn preview_outcome(state: &BrowserCommandState<'_>) -> BrowserCommandOutcome {
+    match selected_target(state.active_panel()) {
+        Some(target) => BrowserCommandOutcome::effect(BrowserCommandEffect::Preview(target)),
+        None => BrowserCommandOutcome::status("nothing selected"),
+    }
 }
 
 #[cfg(test)]
@@ -328,6 +336,58 @@ mod tests {
             outcome.effect,
             BrowserCommandEffect::LoadActive { ref path, prefer_name: None }
                 if path == &PathBuf::from("/tmp/alpha")
+        ));
+    }
+
+    #[test]
+    fn preview_returns_selected_file_effect() {
+        let mut primary = panel(PanelSide::Left);
+        primary.selected_index = 2;
+        let mut secondary = panel(PanelSide::Right);
+        let mut active = PanelSide::Left;
+        let mut input_mode = InputMode::Normal;
+        let mut pending_confirm = None;
+
+        let outcome = with_state(
+            &mut primary,
+            &mut secondary,
+            &mut active,
+            &mut input_mode,
+            &mut pending_confirm,
+            BrowserCommand::Preview,
+            "gp",
+        );
+
+        assert!(!outcome.reveal_active);
+        assert!(matches!(
+            outcome.effect,
+            BrowserCommandEffect::Preview(ref target)
+                if target.name == "beta.txt" && target.path == PathBuf::from("/tmp/beta.txt")
+        ));
+    }
+
+    #[test]
+    fn preview_returns_selected_directory_effect_for_shell_toggle() {
+        let mut primary = panel(PanelSide::Left);
+        let mut secondary = panel(PanelSide::Right);
+        let mut active = PanelSide::Left;
+        let mut input_mode = InputMode::Normal;
+        let mut pending_confirm = None;
+
+        let outcome = with_state(
+            &mut primary,
+            &mut secondary,
+            &mut active,
+            &mut input_mode,
+            &mut pending_confirm,
+            BrowserCommand::Preview,
+            "gp",
+        );
+
+        assert!(!outcome.reveal_active);
+        assert!(matches!(
+            outcome.effect,
+            BrowserCommandEffect::Preview(ref target) if target.name == "alpha" && target.is_dir
         ));
     }
 }
