@@ -1,13 +1,13 @@
 [package]
 name = "stiff"
-version = "0.3.3"
-description = "Keyboard-first GPUI file manager"
-keywords = ["file-manager", "gpui"]
+version = "0.1.0"
+description = "Keyboard-first file manager for power users"
+keywords = ["file-manager", "gpui", "vim"]
 categories = ["filesystem"]
 license = "MIT"
-repository = "https://github.com/kvark/stiff"
-authors = ["Dzmitry Malyshau"]
-edition = "2024"
+repository = "https://github.com/krr0ption/stiff"
+authors = ["Mardin Nasouti"]
+edition = "2026"
 default-run = "stiff"
 exclude = [
     "etc/snapshots/",
