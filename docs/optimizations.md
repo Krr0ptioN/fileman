@@ -1,0 +1,5 @@
+- [ ] Debounce updates in status line when user moves the cursor.
+- [ ] Preview scheduling according to view port, memory, with special strategies 
+    - ignoring optimistic preloading for .gitignore content
+    - file name based indexing
+- [ ] mapping the directory with correct data structure

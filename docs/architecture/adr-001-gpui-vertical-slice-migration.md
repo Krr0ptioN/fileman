@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-FileMan is currently a Rust desktop file manager built on a custom `winit` +
+stiff is currently a Rust desktop file manager built on a custom `winit` +
 `blade-egui` runtime. The codebase already has strong async filesystem, SFTP,
 archive, preview, edit, replay, and image decode logic, but UI rendering,
 keyboard handling, replay, and view state are tightly coupled to egui types.
@@ -37,7 +37,7 @@ src/
 ```
 
 The first GPUI implementation should be a separate binary or feature-gated
-entry point, for example `fileman-gpui`, until it can pass parity replay cases.
+entry point, now named `stiff`, until it can pass parity replay cases.
 
 Use the upstream dependency names and keep versions pinned. The initial
 buildable slice uses crates.io releases because they give reproducible builds
@@ -100,7 +100,7 @@ Use a Vercel-inspired premium theme without hard-coding brand assets:
 ## Migration Order
 1. Extract framework-neutral browser commands from `src/input.rs` and
    `src/app_state.rs`.
-2. Add `fileman-gpui` entry point with a GPUI root, theme provider, and static
+2. Add the `stiff` entry point with a GPUI root, theme provider, and static
    two-panel browser shell.
 3. Connect the browser slice to existing directory loading and selection state.
 4. Port Vim/ranger keymaps through a GPUI keymap adapter.

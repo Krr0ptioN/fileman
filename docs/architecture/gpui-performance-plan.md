@@ -1,13 +1,13 @@
 # GPUI Performance Plan
 
-This plan defines the first migration slice for making FileMan feel closer to
+This plan defines the first migration slice for making stiff feel closer to
 Zed: immediate keyboard response, virtualized file panels, and no UI-thread IO.
 
 ## First Slice: Browser Shell
 
 Scope:
 
-- New `fileman-gpui` binary or feature-gated entry point.
+- New `stiff` GPUI application entry point.
 - GPUI root window with `gpui-component::Root`.
 - Vercel-inspired theme tokens.
 - Two-panel browser layout with header, virtualized rows, and command bar.
