@@ -146,6 +146,8 @@ fn run_elevated_platform(program: &str, args: &[&str]) -> Result<(), String> {
         hProcess: ptr::null_mut(),
     };
 
+    // SAFETY: every pointer in `info` is either null or points into a
+    // NUL-terminated buffer that remains alive for the duration of the call.
     let ok = unsafe { ShellExecuteExW(&mut info) };
     if ok == 0 {
         return Err("Elevation cancelled or failed".to_string());
@@ -154,16 +156,29 @@ fn run_elevated_platform(program: &str, args: &[&str]) -> Result<(), String> {
         return Ok(());
     }
 
+    const WAIT_FAILED: u32 = 0xFFFF_FFFF;
+    // SAFETY: `hProcess` was returned by `ShellExecuteExW`, is non-null, and
+    // remains open until the matching `CloseHandle` call below.
+    let wait_result = unsafe { WaitForSingleObject(info.hProcess, INFINITE) };
+    let mut exit_code: u32 = 1;
+    // SAFETY: `hProcess` is still open and `exit_code` is a valid writable
+    // `u32` for the duration of the call.
+    let exit_result = unsafe { GetExitCodeProcess(info.hProcess, &mut exit_code) };
+    let operation_error = match wait_result == WAIT_FAILED || exit_result == 0 {
+        true => Some(std::io::Error::last_os_error()),
+        false => None,
+    };
+    // SAFETY: this closes the live process handle exactly once.
     unsafe {
-        WaitForSingleObject(info.hProcess, INFINITE);
-        let mut exit_code: u32 = 1;
-        GetExitCodeProcess(info.hProcess, &mut exit_code);
         CloseHandle(info.hProcess);
-        if exit_code == 0 {
-            Ok(())
-        } else {
-            Err(format!("Elevated command failed (exit code {exit_code})"))
-        }
+    }
+    if let Some(error) = operation_error {
+        return Err(format!("Failed to wait for elevated command: {error}"));
+    }
+    if exit_code == 0 {
+        Ok(())
+    } else {
+        Err(format!("Elevated command failed (exit code {exit_code})"))
     }
 }
 
