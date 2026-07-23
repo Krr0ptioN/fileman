@@ -14,7 +14,7 @@ pub use crate::archive::{
 pub use format::{format_date, format_mode, format_size};
 pub use fs::{
     FsEntryKind, copy_recursively, copy_recursively_to, copy_recursively_to_with_progress,
-    delete_path, read_fs_directory, read_fs_directory_filtered,
+    delete_path, fs_entry_from_path, read_fs_directory, read_fs_directory_filtered,
 };
 pub use media::{
     is_archive_name, is_archive_path, is_audio_name, is_audio_path, is_binary_name, is_binary_path,

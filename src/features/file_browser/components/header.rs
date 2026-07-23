@@ -2,7 +2,7 @@ use gpui::{App, IntoElement, ParentElement, RenderOnce, Styled, Window, div, px}
 use gpui_component::{h_flex, v_flex};
 
 use crate::features::{
-    file_browser::{state::BrowserPanel, tokens},
+    file_browser::{TabPosition, state::BrowserPanel, tokens},
     layout::{LayoutState, PaneMode},
 };
 
@@ -10,11 +10,11 @@ use crate::features::{
 pub(crate) struct PanelHeader {
     panel: BrowserPanel,
     active: bool,
-    tab_position: (usize, usize),
+    tab_position: TabPosition,
 }
 
 impl PanelHeader {
-    pub(crate) fn new(panel: &BrowserPanel, active: bool, tab_position: (usize, usize)) -> Self {
+    pub(crate) fn new(panel: &BrowserPanel, active: bool, tab_position: TabPosition) -> Self {
         Self {
             panel: panel.clone(),
             active,
@@ -23,7 +23,7 @@ impl PanelHeader {
     }
 
     fn status(&self) -> String {
-        let panel_status = match (self.panel.loading, self.panel.error.as_ref()) {
+        match (self.panel.loading, self.panel.error.as_ref()) {
             (true, _) => "loading".to_string(),
             (_, Some(error)) => error.clone(),
             _ if self.panel.show_hidden && self.panel.show_ignored => {
@@ -32,18 +32,23 @@ impl PanelHeader {
             _ if self.panel.show_hidden => format!("{} rows | hidden", self.panel.rows.len()),
             _ if self.panel.show_ignored => format!("{} rows | ignored", self.panel.rows.len()),
             _ => format!("{} rows", self.panel.rows.len()),
-        };
-        format!(
-            "tab {}/{} | {panel_status}",
-            self.tab_position.0, self.tab_position.1
-        )
+        }
     }
 
     fn location(&self) -> String {
-        match self.panel.search.as_ref() {
-            Some(search) => format!("{} [find: {}]", search.root.display(), search.query),
+        let location = match self.panel.search.as_ref() {
+            Some(search) => format!(
+                "{} [find {}: {}]",
+                search.root.display(),
+                search.scope.label(),
+                search.query
+            ),
             None => self.panel.path.display().to_string(),
-        }
+        };
+        format!(
+            "tab {}/{} | {location}",
+            self.tab_position.number, self.tab_position.total
+        )
     }
 }
 

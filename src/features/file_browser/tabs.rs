@@ -11,6 +11,12 @@ pub enum BrowserTabAction {
     Close,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TabPosition {
+    pub number: usize,
+    pub total: usize,
+}
+
 #[derive(Clone)]
 struct BrowserTab {
     id: BrowserTabId,
@@ -62,15 +68,21 @@ impl BrowserPane {
         self.active + 1
     }
 
+    pub fn position(&self) -> TabPosition {
+        TabPosition {
+            number: self.active_number(),
+            total: self.tab_count(),
+        }
+    }
+
     pub fn open_tab(&mut self) {
         let mut panel = self.active().clone();
         if let Some(search) = panel.search.take() {
-            panel.path = search.previous.path;
-            panel.selected_index = search.previous.selected_index;
-            panel.rows = search.previous.rows;
-            panel.marked = search.previous.marked;
+            panel.restore_listing(search.previous);
+        }
+        if panel.loading {
             panel.loading = false;
-            panel.error = None;
+            panel.load_generation = 0;
         }
         panel.scroll_handle = Default::default();
         let tab = BrowserTab {
@@ -173,5 +185,42 @@ mod tests {
         assert_eq!(pane.active().path, path::PathBuf::from("/one"));
         assert!(!pane.close_active());
         assert_eq!(pane.tab_count(), 1);
+    }
+
+    #[test]
+    fn tab_cloned_during_load_is_ready_for_its_own_load() {
+        let mut source = panel("/one");
+        source.loading = true;
+        source.load_generation = 9;
+        let mut pane = BrowserPane::new(source);
+
+        pane.open_tab();
+
+        assert!(!pane.active().loading);
+        assert_eq!(pane.active().load_generation, 0);
+    }
+
+    #[test]
+    fn background_completion_targets_origin_tab_after_switch() {
+        let mut pane = BrowserPane::new(panel("/one"));
+        pane.active_mut()
+            .marked_mut()
+            .insert(path::PathBuf::from("/one/marked.txt"));
+        let origin = pane.active_id();
+        pane.open_tab();
+        pane.active_mut().path = path::PathBuf::from("/two");
+
+        pane.panel_mut(origin)
+            .expect("origin tab should remain addressable")
+            .clear_marks();
+
+        assert_eq!(pane.active().path, path::PathBuf::from("/two"));
+        assert_eq!(pane.active().marked.len(), 1);
+        assert!(
+            pane.panel_mut(origin)
+                .expect("origin tab should remain addressable")
+                .marked
+                .is_empty()
+        );
     }
 }

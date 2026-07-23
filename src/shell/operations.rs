@@ -2,7 +2,10 @@ use std::{path::PathBuf, time::Duration};
 
 use gpui::{Context, Timer};
 
-use super::{StiffShell, state::ShellPaneFocus};
+use super::{
+    StiffShell,
+    state::{OperationOrigin, QueuedOperation, ShellPaneFocus},
+};
 use crate::{
     core,
     features::file_browser::{
@@ -33,17 +36,35 @@ impl StiffShell {
         prefer_name: Option<String>,
         cx: &mut Context<Self>,
     ) {
-        self.flush_preview_memory();
         let tab = self.active_tab_id(side);
+        self.load_tab(side, tab, path, prefer_name, cx);
+    }
+
+    fn load_tab(
+        &mut self,
+        side: PanelSide,
+        tab: crate::features::file_browser::BrowserTabId,
+        path: PathBuf,
+        prefer_name: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        let is_active = self.active_tab_id(side) == tab;
+        if is_active {
+            self.flush_preview_memory();
+        }
         let (generation, show_hidden, show_ignored) = {
-            let panel = self.panel_mut(side);
+            let Some(panel) = self.pane_mut(side).panel_mut(tab) else {
+                return;
+            };
             (
                 BrowserCommandState::start_loading(panel, path.clone()),
                 panel.show_hidden,
                 panel.show_ignored,
             )
         };
-        self.status = format!("loading {}", path.display());
+        if is_active {
+            self.status = format!("loading {}", path.display());
+        }
 
         cx.spawn(async move |shell, cx| {
             let load_path = path.clone();
@@ -63,7 +84,9 @@ impl StiffShell {
             cx.update(|cx| {
                 let _ = shell.update(cx, |shell, cx| {
                     shell.apply_loaded_panel(side, tab, path, prefer_name, generation, result);
-                    shell.schedule_preview_preload(cx);
+                    if shell.active_tab_id(side) == tab {
+                        shell.schedule_preview_preload(cx);
+                    }
                     cx.notify();
                 });
             })
@@ -86,6 +109,7 @@ impl StiffShell {
         side: PanelSide,
         root: PathBuf,
         query: String,
+        scope: crate::features::file_browser::FilenameSearchScope,
         cx: &mut Context<Self>,
     ) {
         self.flush_preview_memory();
@@ -97,7 +121,7 @@ impl StiffShell {
                 show_ignored: panel.show_ignored,
             };
             let (generation, cancel) =
-                BrowserCommandState::start_search(panel, root.clone(), query.clone());
+                BrowserCommandState::start_search(panel, root.clone(), query.clone(), scope);
             (generation, cancel, policy)
         };
         self.status = format!("searching for {query}");
@@ -107,7 +131,7 @@ impl StiffShell {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    search_fs_filenames(&search_root, &query, policy, || {
+                    search_fs_filenames(&search_root, &query, scope, policy, || {
                         cancel.load(std::sync::atomic::Ordering::Relaxed)
                     })
                 })
@@ -118,11 +142,11 @@ impl StiffShell {
                     let status = shell.pane_mut(side).panel_mut(tab).and_then(|panel| {
                         BrowserCommandState::apply_search_results(panel, generation, result)
                     });
-                    if let Some(status) = status {
+                    if let Some(status) = status
+                        && shell.active_tab_id(side) == tab
+                    {
                         shell.status = status;
-                        if shell.active_tab_id(side) == tab {
-                            shell.panel_mut(side).reveal_selected();
-                        }
+                        shell.panel_mut(side).reveal_selected();
                         cx.notify();
                     }
                 });
@@ -131,18 +155,32 @@ impl StiffShell {
         .detach();
     }
 
-    fn reload_panels_after_operation(&mut self, cx: &mut Context<Self>) {
-        let left = self.primary.active().path.clone();
-        let right = self.secondary.active().path.clone();
-        self.load_panel(PanelSide::Left, left, None, cx);
-        self.load_panel(PanelSide::Right, right, None, cx);
+    fn reload_operation_origin(&mut self, origin: OperationOrigin, cx: &mut Context<Self>) {
+        let path = self
+            .pane_mut(origin.side)
+            .panel_mut(origin.tab)
+            .map(|panel| {
+                panel.clear_marks();
+                panel.path.clone()
+            });
+        if let Some(path) = path {
+            self.load_tab(origin.side, origin.tab, path, None, cx);
+        }
     }
 
     pub(super) fn run_operation(&mut self, operation: FileOperation, cx: &mut Context<Self>) {
         let task = self
             .task_queue
             .enqueue(operation.task_kind(), operation.item_total(), 0);
-        self.operation_queue.push_back((task, operation));
+        let origin = OperationOrigin {
+            side: self.active,
+            tab: self.active_tab_id(self.active),
+        };
+        self.operation_queue.push_back(QueuedOperation {
+            task,
+            origin,
+            operation,
+        });
         self.status = self.task_queue.status_line();
         self.start_next_operation(cx);
     }
@@ -151,7 +189,12 @@ impl StiffShell {
         if self.operation_in_flight {
             return;
         }
-        let Some((task, operation)) = self.operation_queue.pop_front() else {
+        let Some(QueuedOperation {
+            task,
+            origin,
+            operation,
+        }) = self.operation_queue.pop_front()
+        else {
             return;
         };
         self.operation_in_flight = true;
@@ -182,8 +225,7 @@ impl StiffShell {
                     } else {
                         shell.task_queue.fail(task, result.errors.join("\n"));
                     }
-                    shell.active_panel_mut().clear_marks();
-                    shell.reload_panels_after_operation(cx);
+                    shell.reload_operation_origin(origin, cx);
                     shell.start_next_operation(cx);
                     cx.notify();
                 });
@@ -709,11 +751,11 @@ impl StiffShell {
         let status = self.pane_mut(side).panel_mut(tab).and_then(|panel| {
             BrowserCommandState::apply_loaded(panel, path, prefer_name, generation, result)
         });
-        if let Some(status) = status {
+        if let Some(status) = status
+            && self.active_tab_id(side) == tab
+        {
             self.status = status;
-            if self.active_tab_id(side) == tab {
-                self.panel_mut(side).reveal_selected();
-            }
+            self.panel_mut(side).reveal_selected();
         }
     }
 }

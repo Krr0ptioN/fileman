@@ -95,8 +95,8 @@ impl StiffShell {
             BrowserCommandEffect::LoadActive { path, prefer_name } => {
                 self.load_panel(self.active, path, prefer_name, cx);
             }
-            BrowserCommandEffect::SearchActive { root, query } => {
-                self.search_panel(self.active, root, query, cx);
+            BrowserCommandEffect::SearchActive { root, query, scope } => {
+                self.search_panel(self.active, root, query, scope, cx);
             }
             BrowserCommandEffect::Tab(action) => self.apply_tab_action(action, cx),
             BrowserCommandEffect::OpenWithSystem(path) => cx.open_with_system(&path),

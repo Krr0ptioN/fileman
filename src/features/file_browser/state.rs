@@ -1,8 +1,4 @@
-use std::{
-    collections::HashSet,
-    path::PathBuf,
-    sync::{Arc, atomic},
-};
+use std::{collections, path, sync};
 
 use gpui::{ScrollStrategy, UniformListScrollHandle};
 
@@ -12,12 +8,12 @@ use super::rows::FileRow;
 pub struct BrowserPanel {
     pub side: PanelSide,
     pub title: &'static str,
-    pub path: PathBuf,
+    pub path: path::PathBuf,
     pub selected_index: usize,
-    pub rows: Arc<Vec<FileRow>>,
+    pub rows: sync::Arc<Vec<FileRow>>,
     pub show_hidden: bool,
     pub show_ignored: bool,
-    pub marked: Arc<HashSet<PathBuf>>,
+    pub marked: sync::Arc<collections::HashSet<path::PathBuf>>,
     pub loading: bool,
     pub error: Option<String>,
     pub load_generation: u64,
@@ -27,16 +23,34 @@ pub struct BrowserPanel {
 }
 
 impl BrowserPanel {
+    pub fn listing_snapshot(&self) -> BrowserListingSnapshot {
+        BrowserListingSnapshot {
+            path: self.path.clone(),
+            selected_index: self.selected_index,
+            rows: self.rows.clone(),
+            marked: self.marked.clone(),
+        }
+    }
+
+    pub fn restore_listing(&mut self, snapshot: BrowserListingSnapshot) {
+        self.path = snapshot.path;
+        self.selected_index = snapshot.selected_index;
+        self.rows = snapshot.rows;
+        self.marked = snapshot.marked;
+        self.loading = false;
+        self.error = None;
+    }
+
     pub fn replace_rows(&mut self, rows: Vec<FileRow>) {
-        self.rows = Arc::new(rows);
+        self.rows = sync::Arc::new(rows);
     }
 
     pub fn clear_rows(&mut self) {
-        Arc::make_mut(&mut self.rows).clear();
+        sync::Arc::make_mut(&mut self.rows).clear();
     }
 
-    pub fn marked_mut(&mut self) -> &mut HashSet<PathBuf> {
-        Arc::make_mut(&mut self.marked)
+    pub fn marked_mut(&mut self) -> &mut collections::HashSet<path::PathBuf> {
+        sync::Arc::make_mut(&mut self.marked)
     }
 
     pub fn clear_marks(&mut self) {
@@ -93,24 +107,25 @@ impl BrowserPanel {
 
 #[derive(Clone)]
 pub struct FilenameSearchSession {
-    pub root: PathBuf,
+    pub root: path::PathBuf,
     pub query: String,
+    pub scope: super::FilenameSearchScope,
     pub generation: u64,
-    pub cancel: Arc<atomic::AtomicBool>,
+    pub cancel: sync::Arc<sync::atomic::AtomicBool>,
     pub previous: BrowserListingSnapshot,
 }
 
 #[derive(Clone)]
 pub struct BrowserListingSnapshot {
-    pub path: PathBuf,
+    pub path: path::PathBuf,
     pub selected_index: usize,
-    pub rows: Arc<Vec<FileRow>>,
-    pub marked: Arc<HashSet<PathBuf>>,
+    pub rows: sync::Arc<Vec<FileRow>>,
+    pub marked: sync::Arc<collections::HashSet<path::PathBuf>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileTarget {
-    pub path: PathBuf,
+    pub path: path::PathBuf,
     pub name: String,
     pub is_dir: bool,
 }
@@ -132,16 +147,17 @@ pub enum InputMode {
         input: String,
     },
     NewDirectory {
-        parent: std::path::PathBuf,
+        parent: path::PathBuf,
         input: String,
     },
     QuickJump {
-        base: std::path::PathBuf,
+        base: path::PathBuf,
         input: String,
     },
     FilenameSearch {
-        root: std::path::PathBuf,
+        root: path::PathBuf,
         input: String,
+        scope: super::FilenameSearchScope,
     },
 }
 

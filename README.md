@@ -45,13 +45,16 @@ developed by Zed. The single application binary is `stiff`.
 | `gH` | Toggle gitignored entries |
 | `Ctrl+G` | Quick jump |
 | `Alt+F7` | Search filenames recursively |
+| `Alt+Shift+F7` | Search filenames in the current directory |
 | `?` | Open the key map |
 
 Counts apply to movement and jumps, for example `5j` and `12G`.
 
 Filename search is case-insensitive and respects the active pane's hidden and
-gitignore visibility settings. Press Escape to cancel input or close results and
-restore the prior listing; opening a result navigates to its parent and selects it.
+gitignore visibility settings. Alt+F7 searches the current tree, while
+Alt+Shift+F7 limits the scope to the current directory. Press Escape to cancel
+input or close results and restore the prior listing; opening a result navigates
+to its parent and selects it.
 
 ### Files and Selection
 

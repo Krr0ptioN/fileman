@@ -120,12 +120,17 @@ pub fn start_quick_jump(input_mode: &mut InputMode, base: std::path::PathBuf) ->
     "jump: ".to_string()
 }
 
-pub fn start_filename_search(input_mode: &mut InputMode, root: std::path::PathBuf) -> String {
+pub fn start_filename_search(
+    input_mode: &mut InputMode,
+    root: std::path::PathBuf,
+    scope: super::FilenameSearchScope,
+) -> String {
     *input_mode = InputMode::FilenameSearch {
         root,
         input: String::new(),
+        scope,
     };
-    "find: ".to_string()
+    format!("find {}: ", scope.label())
 }
 
 fn all_selectable_marked(panel: &BrowserPanel) -> bool {

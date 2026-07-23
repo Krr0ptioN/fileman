@@ -1,16 +1,17 @@
-use crate::features::clipboard::{ClipboardEffect, ClipboardKind};
-use crate::features::file_browser::BrowserTabAction;
+use crate::features::{
+    clipboard::{ClipboardEffect, ClipboardKind},
+    file_browser::{
+        BrowserTabAction, effective_targets, parent_navigation, prepare_delete,
+        selected_navigation, selected_target, start_filename_search, start_new_directory,
+        start_rename, toggle_all_marks, toggle_marked,
+    },
+};
 
 use super::{
     effect::{BrowserCommandEffect, BrowserCommandOutcome},
     state::BrowserCommandState,
     types::BrowserCommand,
 };
-use crate::features::file_browser::{
-    effective_targets, parent_navigation, prepare_delete, selected_navigation, selected_target,
-    start_filename_search, start_new_directory, start_rename, toggle_all_marks, toggle_marked,
-};
-
 pub fn execute_browser_command(
     state: &mut BrowserCommandState<'_>,
     command: BrowserCommand,
@@ -53,9 +54,10 @@ fn execute_ready_command(
         }
         OpenParent => parent_navigation(state.active_panel()).into_outcome(),
         OpenSelected => selected_navigation(state.active_panel()).into_outcome(),
-        FilenameSearch => BrowserCommandOutcome::status(start_filename_search(
+        FilenameSearch(scope) => BrowserCommandOutcome::status(start_filename_search(
             state.input_mode,
             state.active_panel().path.clone(),
+            scope,
         )),
         CancelSearch => match BrowserCommandState::cancel_search(state.active_panel_mut()) {
             true => BrowserCommandOutcome::status("search closed").reveal_active(),
@@ -170,6 +172,7 @@ mod tests {
 
     use super::*;
     use crate::features::file_browser::{
+        FilenameSearchScope,
         rows::{FileFormat, FileRow, RowKind},
         state::{BrowserPanel, InputMode, PanelSide, PendingConfirm},
     };
@@ -316,15 +319,17 @@ mod tests {
             &mut active,
             &mut input_mode,
             &mut pending_confirm,
-            BrowserCommand::FilenameSearch,
+            BrowserCommand::FilenameSearch(FilenameSearchScope::Recursive),
             "alt-f7",
         );
 
-        assert_eq!(outcome.status.as_deref(), Some("find: "));
+        assert_eq!(outcome.status.as_deref(), Some("find tree: "));
         assert!(matches!(
             input_mode,
-            InputMode::FilenameSearch { ref root, ref input }
-                if root == &PathBuf::from("/tmp") && input.is_empty()
+            InputMode::FilenameSearch { ref root, ref input, scope }
+                if root == &PathBuf::from("/tmp")
+                    && input.is_empty()
+                    && scope == FilenameSearchScope::Recursive
         ));
         assert!(matches!(outcome.effect, BrowserCommandEffect::None));
     }
@@ -507,7 +512,12 @@ mod tests {
     #[test]
     fn opening_search_result_navigates_to_parent_and_selects_entry() {
         let mut primary = panel(PanelSide::Left);
-        BrowserCommandState::start_search(&mut primary, PathBuf::from("/tmp"), "beta".to_string());
+        BrowserCommandState::start_search(
+            &mut primary,
+            PathBuf::from("/tmp"),
+            "beta".to_string(),
+            FilenameSearchScope::Recursive,
+        );
         let mut result = row("beta.txt", false);
         result.name = "nested/beta.txt".into();
         result.path = PathBuf::from("/tmp/nested/beta.txt");

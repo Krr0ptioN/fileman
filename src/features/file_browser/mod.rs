@@ -40,10 +40,10 @@ pub use preview::{
     classify_preview, load_local_preview, preview_preload_decision,
 };
 pub use rows::FileRow;
-pub use search::search_fs_filenames;
+pub use search::{FilenameSearchScope, search_fs_filenames};
 pub use selection::{delete_status, selection_status, toggle_targets};
 pub use state::{
     BrowserListingSnapshot, BrowserPanel, FileTarget, FilenameSearchSession, InputMode, PanelSide,
     PendingConfirm,
 };
-pub use tabs::{BrowserPane, BrowserTabAction, BrowserTabId};
+pub use tabs::{BrowserPane, BrowserTabAction, BrowserTabId, TabPosition};

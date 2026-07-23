@@ -7,7 +7,7 @@ pub enum BrowserCommand {
     Line(usize),
     OpenParent,
     OpenSelected,
-    FilenameSearch,
+    FilenameSearch(super::super::FilenameSearchScope),
     CancelSearch,
     NewTab,
     NextTab,
@@ -47,7 +47,7 @@ impl BrowserCommand {
                 | Self::OpenHelp
                 | Self::NewDirectory
                 | Self::CancelTask
-                | Self::FilenameSearch
+                | Self::FilenameSearch(_)
                 | Self::CancelSearch
                 | Self::NewTab
                 | Self::NextTab

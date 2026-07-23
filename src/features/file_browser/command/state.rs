@@ -1,9 +1,6 @@
 use crate::features::file_browser::{
     FileRow,
-    state::{
-        BrowserListingSnapshot, BrowserPanel, FilenameSearchSession, InputMode, PanelSide,
-        PendingConfirm,
-    },
+    state::{BrowserPanel, FilenameSearchSession, InputMode, PanelSide, PendingConfirm},
 };
 
 pub struct BrowserCommandState<'a> {
@@ -65,6 +62,7 @@ impl<'a> BrowserCommandState<'a> {
         panel: &mut BrowserPanel,
         root: std::path::PathBuf,
         query: String,
+        scope: crate::features::file_browser::FilenameSearchScope,
     ) -> (u64, std::sync::Arc<std::sync::atomic::AtomicBool>) {
         let previous = match panel.search.take() {
             Some(search) => {
@@ -73,12 +71,7 @@ impl<'a> BrowserCommandState<'a> {
                     .store(true, std::sync::atomic::Ordering::Relaxed);
                 search.previous
             }
-            None => BrowserListingSnapshot {
-                path: panel.path.clone(),
-                selected_index: panel.selected_index,
-                rows: panel.rows.clone(),
-                marked: panel.marked.clone(),
-            },
+            None => panel.listing_snapshot(),
         };
         panel.search_generation = panel.search_generation.wrapping_add(1).max(1);
         let generation = panel.search_generation;
@@ -88,6 +81,7 @@ impl<'a> BrowserCommandState<'a> {
         panel.search = Some(FilenameSearchSession {
             root,
             query,
+            scope,
             generation,
             cancel: cancel.clone(),
             previous,
@@ -132,12 +126,7 @@ impl<'a> BrowserCommandState<'a> {
             .cancel
             .store(true, std::sync::atomic::Ordering::Relaxed);
         panel.search_generation = panel.search_generation.wrapping_add(1).max(1);
-        panel.path = search.previous.path;
-        panel.selected_index = search.previous.selected_index;
-        panel.rows = search.previous.rows;
-        panel.marked = search.previous.marked;
-        panel.loading = false;
-        panel.error = None;
+        panel.restore_listing(search.previous);
         true
     }
 
@@ -285,6 +274,7 @@ mod tests {
             &mut panel,
             PathBuf::from("/tmp"),
             "needle".to_string(),
+            crate::features::file_browser::FilenameSearchScope::Recursive,
         );
         panel.replace_rows(vec![row("result")]);
         panel.selected_index = 0;
@@ -305,6 +295,7 @@ mod tests {
             &mut panel,
             PathBuf::from("/tmp"),
             "needle".to_string(),
+            crate::features::file_browser::FilenameSearchScope::Recursive,
         );
         BrowserCommandState::cancel_search(&mut panel);
 

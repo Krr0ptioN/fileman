@@ -115,10 +115,10 @@ impl StiffShell {
                 self.schedule_preview_preload(cx);
                 true
             }
-            Some(ControlAction::FilenameSearch) => {
+            Some(ControlAction::FilenameSearch(scope)) => {
                 self.vim_command.clear();
                 self.leader_map_open = false;
-                self.execute_browser_command(BrowserCommand::FilenameSearch, "alt-f7", cx)
+                self.execute_browser_command(BrowserCommand::FilenameSearch(scope), "alt-f7", cx)
             }
             Some(ControlAction::QuickJump) => {
                 self.vim_command.clear();

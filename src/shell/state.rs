@@ -8,8 +8,8 @@ use gpui::{Context, FocusHandle};
 use crate::features::{
     clipboard::{PasteConflict, PendingPaste},
     file_browser::{
-        BrowserCommand, BrowserPane, BrowserPanel, BrowserTabId, InputMode, PanelSide,
-        PendingConfirm, PreviewCacheEntry, PreviewState,
+        BrowserCommand, BrowserPane, BrowserPanel, BrowserTabId, FileOperation, InputMode,
+        PanelSide, PendingConfirm, PreviewCacheEntry, PreviewState,
     },
     keybind::{HeldNavigation, KeybindRegistry, VimCommandState, file_manager_keybinds},
     layout::LayoutState,
@@ -20,6 +20,18 @@ use crate::features::{
 pub(super) enum ShellPaneFocus {
     Browser,
     Preview,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct OperationOrigin {
+    pub side: PanelSide,
+    pub tab: BrowserTabId,
+}
+
+pub(super) struct QueuedOperation {
+    pub task: TaskId,
+    pub origin: OperationOrigin,
+    pub operation: FileOperation,
 }
 
 pub(crate) struct StiffShell {
@@ -36,7 +48,7 @@ pub(crate) struct StiffShell {
     pub(super) help_popup_open: bool,
     pub(super) leader_map_open: bool,
     pub(super) operation_in_flight: bool,
-    pub(super) operation_queue: VecDeque<(TaskId, crate::features::file_browser::FileOperation)>,
+    pub(super) operation_queue: VecDeque<QueuedOperation>,
     pub(super) task_queue: TaskQueue,
     pub(super) active_task: Option<TaskId>,
     pub(super) preview: Option<PreviewState>,

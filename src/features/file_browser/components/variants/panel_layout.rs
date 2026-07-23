@@ -4,6 +4,7 @@ use gpui_component::{h_flex, v_flex};
 use super::LayoutVariant;
 use crate::features::{
     file_browser::{
+        TabPosition,
         components::FilePanel,
         state::{BrowserPanel, PanelSide, PendingConfirm},
     },
@@ -14,8 +15,8 @@ use crate::features::{
 pub struct PanelLayout {
     primary: BrowserPanel,
     secondary: BrowserPanel,
-    primary_tabs: (usize, usize),
-    secondary_tabs: (usize, usize),
+    primary_tabs: TabPosition,
+    secondary_tabs: TabPosition,
     active: PanelSide,
     pending_confirm: Option<PendingConfirm>,
 }
@@ -24,8 +25,8 @@ impl PanelLayout {
     pub fn new(
         primary: &BrowserPanel,
         secondary: &BrowserPanel,
-        primary_tabs: (usize, usize),
-        secondary_tabs: (usize, usize),
+        primary_tabs: TabPosition,
+        secondary_tabs: TabPosition,
         active: PanelSide,
         pending_confirm: Option<&PendingConfirm>,
     ) -> Self {

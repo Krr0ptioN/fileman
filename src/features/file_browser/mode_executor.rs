@@ -23,6 +23,7 @@ fn apply_filename_search_action(
     let InputMode::FilenameSearch {
         ref root,
         ref mut input,
+        scope,
     } = *input_mode
     else {
         unreachable!("filename-search action requires filename-search input mode");
@@ -35,7 +36,7 @@ fn apply_filename_search_action(
         }
         RenameModeAction::Backspace => {
             input.pop();
-            BrowserCommandOutcome::status(format!("find: {input}"))
+            BrowserCommandOutcome::status(format!("find {}: {input}", scope.label()))
         }
         RenameModeAction::Submit => {
             let root = root.clone();
@@ -45,13 +46,13 @@ fn apply_filename_search_action(
                 true => BrowserCommandOutcome::status("search unchanged"),
                 false => BrowserCommandOutcome::status_effect(
                     format!("searching for {query}"),
-                    BrowserCommandEffect::SearchActive { root, query },
+                    BrowserCommandEffect::SearchActive { root, query, scope },
                 ),
             }
         }
         RenameModeAction::Insert(ch) => {
             input.push(ch);
-            BrowserCommandOutcome::status(format!("find: {input}"))
+            BrowserCommandOutcome::status(format!("find {}: {input}", scope.label()))
         }
         RenameModeAction::Consume => BrowserCommandOutcome::effect(BrowserCommandEffect::None),
     }
@@ -245,7 +246,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::features::file_browser::{FileTarget, state::InputMode};
+    use crate::features::file_browser::{FileTarget, FilenameSearchScope, state::InputMode};
 
     fn target() -> FileTarget {
         FileTarget {
@@ -390,6 +391,7 @@ mod tests {
         let mut mode = InputMode::FilenameSearch {
             root: PathBuf::from("/tmp"),
             input: "Needle".to_string(),
+            scope: FilenameSearchScope::Recursive,
         };
 
         let outcome = apply_rename_action(&mut mode, RenameModeAction::Submit)
@@ -399,8 +401,10 @@ mod tests {
         assert_eq!(outcome.status.as_deref(), Some("searching for Needle"));
         assert!(matches!(
             outcome.effect,
-            BrowserCommandEffect::SearchActive { ref root, ref query }
-                if root == &PathBuf::from("/tmp") && query == "Needle"
+            BrowserCommandEffect::SearchActive { ref root, ref query, scope }
+                if root == &PathBuf::from("/tmp")
+                    && query == "Needle"
+                    && scope == FilenameSearchScope::Recursive
         ));
     }
 
@@ -409,6 +413,7 @@ mod tests {
         let mut cancelled = InputMode::FilenameSearch {
             root: PathBuf::from("/tmp"),
             input: "needle".to_string(),
+            scope: FilenameSearchScope::Recursive,
         };
         let outcome = apply_rename_action(&mut cancelled, RenameModeAction::Cancel)
             .expect("filename-search mode should handle cancel");
@@ -419,6 +424,7 @@ mod tests {
         let mut empty = InputMode::FilenameSearch {
             root: PathBuf::from("/tmp"),
             input: " ".to_string(),
+            scope: FilenameSearchScope::Recursive,
         };
         let outcome = apply_rename_action(&mut empty, RenameModeAction::Submit)
             .expect("filename-search mode should handle submit");

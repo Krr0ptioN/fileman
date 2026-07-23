@@ -20,6 +20,27 @@ pub fn read_fs_directory(path: &path::Path) -> anyhow::Result<Vec<DirEntry>> {
     read_fs_directory_filtered(path, |_| true, |_, _| true)
 }
 
+pub fn fs_entry_from_path(path: &path::Path, name: String) -> io::Result<DirEntry> {
+    let symlink_metadata = fs::symlink_metadata(path)?;
+    let is_symlink = symlink_metadata.file_type().is_symlink();
+    let metadata = match is_symlink {
+        true => fs::metadata(path).ok(),
+        false => Some(symlink_metadata),
+    };
+    let is_dir = metadata.as_ref().is_some_and(fs::Metadata::is_dir);
+
+    Ok(DirEntry {
+        name,
+        is_dir,
+        is_symlink,
+        is_executable: is_executable(metadata.as_ref()),
+        link_target: None,
+        location: EntryLocation::Fs(path.to_path_buf()),
+        size: metadata.as_ref().filter(|_| !is_dir).map(fs::Metadata::len),
+        modified: metadata.as_ref().and_then(modified_secs),
+    })
+}
+
 pub fn read_fs_directory_filtered(
     path: &path::Path,
     mut include_name: impl FnMut(&OsStr) -> bool,

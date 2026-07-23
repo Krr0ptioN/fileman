@@ -7,6 +7,7 @@ use super::{header::PanelHeader, row::FileRowItem};
 use crate::features::{
     clipboard::{ClipboardKind, target_paths},
     file_browser::{
+        TabPosition,
         rows::row_intent,
         state::{BrowserPanel, PanelSide, PendingConfirm},
         tokens,
@@ -17,7 +18,7 @@ use crate::features::{
 pub struct FilePanel {
     panel: BrowserPanel,
     active: bool,
-    tab_position: (usize, usize),
+    tab_position: TabPosition,
     pending_confirm: Option<PendingConfirm>,
 }
 
@@ -25,7 +26,7 @@ impl FilePanel {
     pub fn new(
         panel: &BrowserPanel,
         active: bool,
-        tab_position: (usize, usize),
+        tab_position: TabPosition,
         pending_confirm: Option<&PendingConfirm>,
     ) -> Self {
         Self {

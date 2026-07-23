@@ -1,6 +1,6 @@
 use crate::features::{
     clipboard::ClipboardEffect,
-    file_browser::{BrowserTabAction, FileOperation, FileTarget},
+    file_browser::{BrowserTabAction, FileOperation, FileTarget, FilenameSearchScope},
 };
 
 pub enum BrowserCommandEffect {
@@ -12,6 +12,7 @@ pub enum BrowserCommandEffect {
     SearchActive {
         root: std::path::PathBuf,
         query: String,
+        scope: FilenameSearchScope,
     },
     Tab(BrowserTabAction),
     OpenWithSystem(std::path::PathBuf),

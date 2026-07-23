@@ -1,12 +1,28 @@
-use std::{fs, path, time};
+use std::path;
 
 use crate::core;
 
 use super::VisibilityPolicy;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FilenameSearchScope {
+    CurrentDirectory,
+    Recursive,
+}
+
+impl FilenameSearchScope {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::CurrentDirectory => "here",
+            Self::Recursive => "tree",
+        }
+    }
+}
+
 pub fn search_fs_filenames(
     root: &path::Path,
     query: &str,
+    scope: FilenameSearchScope,
     policy: VisibilityPolicy,
     cancelled: impl Fn() -> bool,
 ) -> anyhow::Result<Vec<core::DirEntry>> {
@@ -14,11 +30,15 @@ pub fn search_fs_filenames(
     let mut builder = ignore::WalkBuilder::new(root);
     builder
         .hidden(!policy.show_hidden)
+        .ignore(false)
         .git_ignore(!policy.show_ignored)
-        .git_global(!policy.show_ignored)
-        .git_exclude(!policy.show_ignored)
+        .git_global(false)
+        .git_exclude(false)
         .parents(!policy.show_ignored)
         .follow_links(false);
+    if scope == FilenameSearchScope::CurrentDirectory {
+        builder.max_depth(Some(1));
+    }
 
     let mut results = Vec::new();
     for entry in builder.build() {
@@ -34,42 +54,14 @@ pub fn search_fs_filenames(
             continue;
         }
 
-        let metadata = entry.metadata().ok();
-        let is_dir = entry.file_type().is_some_and(|kind| kind.is_dir());
         let relative = entry.path().strip_prefix(root).unwrap_or(entry.path());
-        results.push(core::DirEntry {
-            name: relative.to_string_lossy().into_owned(),
-            is_dir,
-            is_symlink: entry.file_type().is_some_and(|kind| kind.is_symlink()),
-            is_executable: executable(metadata.as_ref()),
-            link_target: None,
-            location: core::EntryLocation::Fs(entry.into_path()),
-            size: metadata.as_ref().filter(|_| !is_dir).map(fs::Metadata::len),
-            modified: metadata.as_ref().and_then(modified_secs),
-        });
+        results.push(core::fs_entry_from_path(
+            entry.path(),
+            relative.to_string_lossy().into_owned(),
+        )?);
     }
     results.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(results)
-}
-
-#[cfg(unix)]
-fn executable(metadata: Option<&fs::Metadata>) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-
-    metadata.is_some_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
-}
-
-#[cfg(not(unix))]
-fn executable(_: Option<&fs::Metadata>) -> bool {
-    false
-}
-
-fn modified_secs(metadata: &fs::Metadata) -> Option<u64> {
-    metadata
-        .modified()
-        .ok()
-        .and_then(|modified| modified.duration_since(time::UNIX_EPOCH).ok())
-        .map(|duration| duration.as_secs())
 }
 
 #[cfg(test)]
@@ -88,6 +80,7 @@ mod tests {
         let results = search_fs_filenames(
             &root,
             "needle",
+            FilenameSearchScope::Recursive,
             VisibilityPolicy {
                 show_hidden: false,
                 show_ignored: false,
@@ -119,6 +112,7 @@ mod tests {
         let results = search_fs_filenames(
             &root,
             "needle",
+            FilenameSearchScope::Recursive,
             VisibilityPolicy {
                 show_hidden: false,
                 show_ignored: false,
@@ -145,6 +139,7 @@ mod tests {
         let results = search_fs_filenames(
             &root,
             "needle",
+            FilenameSearchScope::Recursive,
             VisibilityPolicy {
                 show_hidden: true,
                 show_ignored: true,
@@ -154,6 +149,68 @@ mod tests {
         .unwrap();
 
         assert!(results.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn current_directory_scope_does_not_descend() {
+        let root = test_root("scope");
+        fs::create_dir_all(root.join("nested")).unwrap();
+        fs::write(root.join("needle.txt"), "top").unwrap();
+        fs::write(root.join("nested/needle.txt"), "nested").unwrap();
+
+        let results = search_fs_filenames(
+            &root,
+            "needle",
+            FilenameSearchScope::CurrentDirectory,
+            VisibilityPolicy {
+                show_hidden: false,
+                show_ignored: false,
+            },
+            || false,
+        )
+        .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "needle.txt");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn visibility_matches_browser_gitignore_sources() {
+        let root = test_root("show-ignored");
+        fs::create_dir_all(root.join(".git")).unwrap();
+        fs::write(root.join(".gitignore"), "gitignored-needle.txt\n").unwrap();
+        fs::write(root.join(".ignore"), "local-needle.txt\n").unwrap();
+        fs::write(root.join("gitignored-needle.txt"), "gitignore").unwrap();
+        fs::write(root.join("local-needle.txt"), "ignore-file").unwrap();
+
+        let visible = search_fs_filenames(
+            &root,
+            "needle",
+            FilenameSearchScope::Recursive,
+            VisibilityPolicy {
+                show_hidden: false,
+                show_ignored: false,
+            },
+            || false,
+        )
+        .unwrap();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].name, "local-needle.txt");
+
+        let all = search_fs_filenames(
+            &root,
+            "needle",
+            FilenameSearchScope::Recursive,
+            VisibilityPolicy {
+                show_hidden: false,
+                show_ignored: true,
+            },
+            || false,
+        )
+        .unwrap();
+        assert_eq!(all.len(), 2);
         fs::remove_dir_all(root).unwrap();
     }
 
