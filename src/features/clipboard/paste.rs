@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashSet, VecDeque},
-    path::{Path, PathBuf},
-};
+use std::{collections, path};
 
 use super::{ClipboardKind, ClipboardState};
 use crate::features::file_browser::FileTarget;
@@ -23,7 +20,7 @@ pub struct PasteConflictDecision {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlannedPaste {
     pub target: FileTarget,
-    pub destination: PathBuf,
+    pub destination: path::PathBuf,
     pub disposition: PasteDisposition,
 }
 
@@ -41,15 +38,15 @@ pub struct PasteBatch {
 
 pub struct PasteConflict {
     pub source_name: String,
-    pub destination: PathBuf,
+    pub destination: path::PathBuf,
 }
 
 pub struct PendingPaste {
     kind: ClipboardKind,
-    dst_dir: PathBuf,
-    remaining: VecDeque<FileTarget>,
+    dst_dir: path::PathBuf,
+    remaining: collections::VecDeque<FileTarget>,
     planned: Vec<PlannedPaste>,
-    destinations: HashSet<PathBuf>,
+    destinations: collections::HashSet<path::PathBuf>,
     apply_policy: Option<PasteConflictPolicy>,
 }
 
@@ -63,7 +60,7 @@ pub enum PastePlan {
     Cancelled,
 }
 
-pub fn plan_paste(clipboard: &ClipboardState, dst_dir: PathBuf) -> PastePlan {
+pub fn plan_paste(clipboard: &ClipboardState, dst_dir: path::PathBuf) -> PastePlan {
     let default_conflict_policy = clipboard.default_conflict_policy;
     match clipboard.op.clone() {
         Some(clipboard) => advance(PendingPaste {
@@ -71,7 +68,7 @@ pub fn plan_paste(clipboard: &ClipboardState, dst_dir: PathBuf) -> PastePlan {
             dst_dir,
             remaining: clipboard.targets.into(),
             planned: Vec::new(),
-            destinations: HashSet::new(),
+            destinations: collections::HashSet::new(),
             apply_policy: default_conflict_policy,
         }),
         None => PastePlan::Empty,
@@ -98,6 +95,9 @@ fn advance(mut pending: PendingPaste) -> PastePlan {
         let collides = path_occupied(&destination) || pending.destinations.contains(&destination);
         if collides {
             if let Some(policy) = pending.apply_policy {
+                if policy == PasteConflictPolicy::Cancel {
+                    return PastePlan::Cancelled;
+                }
                 apply_policy(&mut pending, policy);
                 continue;
             }
@@ -139,7 +139,11 @@ fn apply_policy(pending: &mut PendingPaste, policy: PasteConflictPolicy) {
     }
 }
 
-fn push_planned(pending: &mut PendingPaste, destination: PathBuf, disposition: PasteDisposition) {
+fn push_planned(
+    pending: &mut PendingPaste,
+    destination: path::PathBuf,
+    disposition: PasteDisposition,
+) {
     if let Some(target) = pending.remaining.pop_front() {
         pending.destinations.insert(destination.clone());
         pending.planned.push(PlannedPaste {
@@ -150,8 +154,11 @@ fn push_planned(pending: &mut PendingPaste, destination: PathBuf, disposition: P
     }
 }
 
-fn available_destination(destination: &Path, reserved: &HashSet<PathBuf>) -> PathBuf {
-    let parent = destination.parent().unwrap_or_else(|| Path::new(""));
+fn available_destination(
+    destination: &path::Path,
+    reserved: &collections::HashSet<path::PathBuf>,
+) -> path::PathBuf {
+    let parent = destination.parent().unwrap_or_else(|| path::Path::new(""));
     let stem = destination
         .file_stem()
         .and_then(|stem| stem.to_str())
@@ -172,7 +179,7 @@ fn available_destination(destination: &Path, reserved: &HashSet<PathBuf>) -> Pat
     unreachable!()
 }
 
-fn path_occupied(path: &Path) -> bool {
+fn path_occupied(path: &path::Path) -> bool {
     std::fs::symlink_metadata(path).is_ok()
 }
 
@@ -193,7 +200,7 @@ mod tests {
         }
     }
 
-    fn target(root: &Path, name: &str) -> FileTarget {
+    fn target(root: &path::Path, name: &str) -> FileTarget {
         FileTarget {
             path: root.join("source").join(name),
             name: name.to_string(),
@@ -324,6 +331,23 @@ mod tests {
         };
 
         assert!(batch.items.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn configured_cancel_policy_aborts_on_first_conflict() {
+        let root =
+            std::env::temp_dir().join(format!("stiff-paste-default-cancel-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("destination")).unwrap();
+        fs::write(root.join("destination/a.txt"), "existing").unwrap();
+        let mut clipboard = clipboard(vec![target(&root, "a.txt")]);
+        clipboard.default_conflict_policy = Some(PasteConflictPolicy::Cancel);
+
+        assert!(matches!(
+            plan_paste(&clipboard, root.join("destination")),
+            PastePlan::Cancelled
+        ));
         fs::remove_dir_all(root).unwrap();
     }
 }
