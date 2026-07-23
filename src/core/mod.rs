@@ -12,7 +12,9 @@ pub use crate::archive::{
     read_container_directory_with_progress, read_container_metadata,
 };
 pub use format::{format_date, format_mode, format_size};
-pub use fs::{copy_recursively, delete_path, read_fs_directory, read_fs_directory_filtered};
+pub use fs::{
+    FsEntryKind, copy_recursively, delete_path, read_fs_directory, read_fs_directory_filtered,
+};
 pub use media::{
     is_archive_name, is_archive_path, is_audio_name, is_audio_path, is_binary_name, is_binary_path,
     is_code_name, is_code_path, is_image_name, is_image_path, is_media_name, is_pdf_name,

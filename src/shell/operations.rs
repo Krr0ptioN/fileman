@@ -7,7 +7,7 @@ use crate::{
     core,
     features::file_browser::{
         BrowserCommandState, FileOperation, FileTarget, PanelSide, PreviewBody, PreviewCacheEntry,
-        PreviewPreloadDecision, PreviewRequest, PreviewState, load_local_preview,
+        PreviewPreloadDecision, PreviewRequest, PreviewState, VisibilityPolicy, load_local_preview,
         preview_preload_decision, read_visible_fs_directory,
     },
 };
@@ -47,9 +47,15 @@ impl StiffShell {
             let load_path = path.clone();
             let result = cx
                 .background_executor()
-                .spawn(
-                    async move { read_visible_fs_directory(&load_path, show_hidden, show_ignored) },
-                )
+                .spawn(async move {
+                    read_visible_fs_directory(
+                        &load_path,
+                        VisibilityPolicy {
+                            show_hidden,
+                            show_ignored,
+                        },
+                    )
+                })
                 .await;
 
             cx.update(|cx| {

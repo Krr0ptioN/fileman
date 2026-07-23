@@ -2,19 +2,29 @@ use std::{ffi::OsStr, fs, io, path, time::UNIX_EPOCH};
 
 use crate::core::{DirEntry, EntryLocation};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FsEntryKind {
+    Directory,
+    File,
+}
+
 pub fn read_fs_directory(path: &path::Path) -> anyhow::Result<Vec<DirEntry>> {
-    read_fs_directory_filtered(path, |_, _| true)
+    read_fs_directory_filtered(path, |_| true, |_, _| true)
 }
 
 pub fn read_fs_directory_filtered(
     path: &path::Path,
-    mut include: impl FnMut(&OsStr, bool) -> bool,
+    mut include_name: impl FnMut(&OsStr) -> bool,
+    mut include_entry: impl FnMut(&OsStr, FsEntryKind) -> bool,
 ) -> anyhow::Result<Vec<DirEntry>> {
     let mut dir_entries = Vec::new();
 
     for entry in fs::read_dir(path)? {
         let entry = entry?;
         let file_name = entry.file_name();
+        if !include_name(&file_name) {
+            continue;
+        }
         let file_type = entry.file_type()?;
         let is_symlink = file_type.is_symlink();
         let metadata = match is_symlink {
@@ -25,7 +35,11 @@ pub fn read_fs_directory_filtered(
             true => metadata.as_ref().is_some_and(fs::Metadata::is_dir),
             false => file_type.is_dir(),
         };
-        if include(&file_name, is_dir) {
+        let kind = match is_dir {
+            true => FsEntryKind::Directory,
+            false => FsEntryKind::File,
+        };
+        if include_entry(&file_name, kind) {
             dir_entries.push(dir_entry(entry, file_name, is_symlink, is_dir, metadata)?);
         }
     }

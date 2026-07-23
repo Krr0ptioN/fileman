@@ -4,7 +4,7 @@ use gpui::{
 };
 use gpui_component::h_flex;
 
-use super::row_content::FileRowContent;
+use super::row_content::{FileRowContent, FileRowPresentation};
 use crate::features::file_browser::{
     rows::{FileRow, RowIntent, RowKind},
     tokens,
@@ -75,9 +75,11 @@ impl RenderOnce for FileRowItem {
             .rounded(px(if self.selected { 7.0 } else { 0.0 }))
             .hover(|style| style.bg(tokens::ROW_HOVER))
             .child(FileRowContent::new(
-                self.kind,
-                self.name,
-                self.is_executable,
+                FileRowPresentation {
+                    kind: self.kind,
+                    name: self.name,
+                    is_executable: self.is_executable,
+                },
                 self.selected,
                 self.intent,
             ))

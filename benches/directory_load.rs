@@ -39,9 +39,14 @@ fn main() {
     let filtered_ingestion_samples = (0..SAMPLE_COUNT)
         .map(|_| {
             let start = Instant::now();
-            let entries =
-                stiff::features::file_browser::read_visible_fs_directory(&root, false, true)
-                    .expect("benchmark directory should load");
+            let entries = stiff::features::file_browser::read_visible_fs_directory(
+                &root,
+                stiff::features::file_browser::VisibilityPolicy {
+                    show_hidden: false,
+                    show_ignored: true,
+                },
+            )
+            .expect("benchmark directory should load");
             black_box(entries);
             start.elapsed()
         })

@@ -12,25 +12,21 @@ use crate::features::file_browser::{
 
 #[derive(IntoElement)]
 pub(crate) struct FileRowContent {
-    kind: RowKind,
-    name: SharedString,
-    is_executable: bool,
+    row: FileRowPresentation,
     selected: bool,
     intent: RowIntent,
 }
 
+pub(crate) struct FileRowPresentation {
+    pub kind: RowKind,
+    pub name: SharedString,
+    pub is_executable: bool,
+}
+
 impl FileRowContent {
-    pub(crate) fn new(
-        kind: RowKind,
-        name: SharedString,
-        is_executable: bool,
-        selected: bool,
-        intent: RowIntent,
-    ) -> Self {
+    pub(crate) fn new(row: FileRowPresentation, selected: bool, intent: RowIntent) -> Self {
         Self {
-            kind,
-            name,
-            is_executable,
+            row,
             selected,
             intent,
         }
@@ -45,14 +41,14 @@ impl RenderOnce for FileRowContent {
             .min_w(px(0.0))
             .flex_1()
             .child(intent_badge(self.intent))
-            .child(row_icon(self.kind))
-            .child(executable_badge(self.is_executable))
-            .child(FileName::new(self.name, self.selected))
+            .child(row_icon(self.row.kind))
+            .child(executable_badge(self.row.is_executable))
+            .child(FileName::new(self.row.name, self.selected))
             .child(
                 div()
                     .text_size(px(11.0))
                     .text_color(tokens::TEXT_MUTED)
-                    .child(kind_label(self.kind)),
+                    .child(kind_label(self.row.kind)),
             )
     }
 }

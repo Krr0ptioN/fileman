@@ -4,24 +4,34 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 
 use crate::core::DirEntry;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VisibilityPolicy {
+    pub show_hidden: bool,
+    pub show_ignored: bool,
+}
+
 pub fn read_visible_fs_directory(
     directory: &Path,
-    show_hidden: bool,
-    show_ignored: bool,
+    policy: VisibilityPolicy,
 ) -> anyhow::Result<Vec<DirEntry>> {
-    let matcher = match show_ignored {
+    let matcher = match policy.show_ignored {
         true => None,
         false => matcher_for_directory(directory),
     };
-    crate::core::read_fs_directory_filtered(directory, |name, is_dir| {
-        let visible = show_hidden || !name.as_encoded_bytes().starts_with(b".");
-        visible
-            && !matcher.as_ref().is_some_and(|matcher| {
+    crate::core::read_fs_directory_filtered(
+        directory,
+        |name| policy.show_hidden || !name.as_encoded_bytes().starts_with(b"."),
+        |name, kind| {
+            !matcher.as_ref().is_some_and(|matcher| {
                 matcher
-                    .matched_path_or_any_parents(directory.join(name), is_dir)
+                    .matched_path_or_any_parents(
+                        directory.join(name),
+                        kind == crate::core::FsEntryKind::Directory,
+                    )
                     .is_ignore()
             })
-    })
+        },
+    )
 }
 
 pub fn hide_gitignored_entries(directory: &Path, entries: Vec<DirEntry>) -> Vec<DirEntry> {
