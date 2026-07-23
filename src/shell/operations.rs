@@ -289,6 +289,7 @@ impl StiffShell {
         } else {
             request.scroll_line.saturating_add(delta as usize)
         };
+        request.byte_offset = 0;
         if request.scroll_line == preview.request.scroll_line {
             return true;
         }
@@ -398,6 +399,7 @@ impl StiffShell {
 
         let mut request = preview.request.clone();
         request.scroll_line = loaded_end;
+        request.byte_offset = text.next_byte_offset;
         request.viewport.visible_lines = self.extension_lines_for_strategy(strategy);
         request.viewport.preload_lines = 0;
         self.extend_visible_preview(request, cx);

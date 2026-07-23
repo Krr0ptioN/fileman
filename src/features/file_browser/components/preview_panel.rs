@@ -146,7 +146,11 @@ fn listing_lines(preview: PreviewListing) -> (&'static str, Vec<String>, Option<
         false => Some(format!("{} entries", preview.entries.len())),
     };
 
-    ("archive", preview.entries, muted)
+    (
+        "archive",
+        std::sync::Arc::unwrap_or_clone(preview.entries),
+        muted,
+    )
 }
 
 fn binary_lines(preview: BinaryPreview) -> (&'static str, Vec<String>, Option<String>) {

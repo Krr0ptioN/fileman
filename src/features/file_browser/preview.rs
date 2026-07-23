@@ -1,3 +1,10 @@
+use std::{
+    collections::VecDeque,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, OnceLock},
+    time::SystemTime,
+};
+
 use crate::core;
 
 use super::{FileTarget, path_is_gitignored, rows::FileFormat};
@@ -6,6 +13,18 @@ pub const DEFAULT_PREVIEW_VISIBLE_LINES: usize = 48;
 pub const DEFAULT_PREVIEW_PRELOAD_LINES: usize = 24;
 pub const TEXT_PREVIEW_MAX_BYTES: usize = 128 * 1024;
 pub const BINARY_PREVIEW_BYTES_PER_LINE: usize = 16;
+const ARCHIVE_LISTING_CACHE_CAPACITY: usize = 8;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ArchiveListingCacheKey {
+    path: PathBuf,
+    len: Option<u64>,
+    modified: Option<SystemTime>,
+}
+
+type ArchiveListingCache = VecDeque<(ArchiveListingCacheKey, Arc<Vec<String>>)>;
+
+static ARCHIVE_LISTING_CACHE: OnceLock<Mutex<ArchiveListingCache>> = OnceLock::new();
 
 #[derive(Clone)]
 pub struct PreviewState {
@@ -25,6 +44,7 @@ pub struct PreviewRequest {
     pub target: FileTarget,
     pub viewport: PreviewViewport,
     pub scroll_line: usize,
+    pub byte_offset: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,21 +78,22 @@ pub enum PreviewPreloadDecision {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TextPreview {
-    pub text: String,
+    pub text: Arc<String>,
     pub first_line: usize,
     pub loaded_lines: usize,
+    pub next_byte_offset: u64,
     pub truncated: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PreviewListing {
-    pub entries: Vec<String>,
+    pub entries: Arc<Vec<String>>,
     pub truncated: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BinaryPreview {
-    pub text: String,
+    pub text: Arc<String>,
     pub bytes_read: usize,
     pub truncated: bool,
 }
@@ -91,8 +112,9 @@ impl TextPreview {
             return false;
         }
 
-        self.text.push_str(&next.text);
+        Arc::make_mut(&mut self.text).push_str(&next.text);
         self.loaded_lines = self.loaded_lines.saturating_add(next.loaded_lines);
+        self.next_byte_offset = next.next_byte_offset;
         self.truncated = next.truncated;
         true
     }
@@ -163,6 +185,7 @@ impl PreviewRequest {
             target,
             viewport: PreviewViewport::default(),
             scroll_line: 0,
+            byte_offset: 0,
         }
     }
 
@@ -219,6 +242,50 @@ trait PreviewHandler {
 
 struct ArchivePreviewHandler;
 
+fn archive_listing_cache_key(path: &Path) -> ArchiveListingCacheKey {
+    let metadata = path.metadata().ok();
+    ArchiveListingCacheKey {
+        path: path.to_path_buf(),
+        len: metadata.as_ref().map(std::fs::Metadata::len),
+        modified: metadata.and_then(|metadata| metadata.modified().ok()),
+    }
+}
+
+fn load_archive_listing(
+    kind: core::ContainerKind,
+    path: &Path,
+) -> anyhow::Result<Arc<Vec<String>>> {
+    let key = archive_listing_cache_key(path);
+    let cache = ARCHIVE_LISTING_CACHE.get_or_init(|| Mutex::new(VecDeque::new()));
+    if let Ok(mut cache) = cache.lock()
+        && let Some(index) = cache.iter().position(|entry| entry.0 == key)
+        && let Some(entry) = cache.remove(index)
+    {
+        let listing = Arc::clone(&entry.1);
+        cache.push_back(entry);
+        return Ok(listing);
+    }
+
+    let listing = Arc::new(
+        core::read_container_directory(kind, path, "")?
+            .into_iter()
+            .filter(|entry| entry.name != "..")
+            .map(|entry| match entry.is_dir {
+                true => format!("{}/", entry.name),
+                false => entry.name,
+            })
+            .collect(),
+    );
+
+    if let Ok(mut cache) = cache.lock() {
+        if cache.len() == ARCHIVE_LISTING_CACHE_CAPACITY {
+            cache.pop_front();
+        }
+        cache.push_back((key, Arc::clone(&listing)));
+    }
+    Ok(listing)
+}
+
 impl PreviewHandler for ArchivePreviewHandler {
     fn matches(&self, request: &PreviewRequest) -> bool {
         core::container_kind_from_path(&request.target.path).is_some()
@@ -229,21 +296,15 @@ impl PreviewHandler for ArchivePreviewHandler {
             return PreviewBody::Error("unsupported archive".to_string());
         };
 
-        match core::read_container_directory(kind, &request.target.path, "") {
+        match load_archive_listing(kind, &request.target.path) {
             Ok(entries) => {
                 let line_budget = request.line_budget();
-                let entries = entries
-                    .into_iter()
-                    .filter(|entry| entry.name != "..")
-                    .skip(request.scroll_line)
-                    .map(|entry| match entry.is_dir {
-                        true => format!("{}/", entry.name),
-                        false => entry.name,
-                    })
-                    .collect::<Vec<_>>();
-                let truncated = entries.len() > line_budget;
+                let start = request.scroll_line.min(entries.len());
+                let end = start.saturating_add(line_budget).min(entries.len());
+                let truncated = end < entries.len();
+                let entries = entries[start..end].to_vec();
                 PreviewBody::Listing(PreviewListing {
-                    entries: entries.into_iter().take(line_budget).collect(),
+                    entries: Arc::new(entries),
                     truncated,
                 })
             }
@@ -263,16 +324,18 @@ impl PreviewHandler for TextPreviewHandler {
     }
 
     fn load(&self, request: PreviewRequest) -> PreviewBody {
-        match core::read_text_lines_prefix(
+        match core::read_text_lines_from(
             &request.target.path,
+            request.byte_offset,
             request.scroll_line,
             request.line_budget(),
             request.viewport.max_bytes,
         ) {
             Ok(preview) => PreviewBody::Text(TextPreview {
-                text: preview.text,
+                text: Arc::new(preview.text),
                 first_line: request.scroll_line,
                 loaded_lines: preview.lines_read,
+                next_byte_offset: preview.next_byte_offset,
                 truncated: preview.truncated,
             }),
             Err(error) => PreviewBody::Error(error.to_string()),
@@ -291,15 +354,16 @@ impl PreviewHandler for BinaryPreviewHandler {
         let max_bytes = request.line_budget() * BINARY_PREVIEW_BYTES_PER_LINE;
         match core::read_bytes_prefix(&request.target.path, max_bytes) {
             Ok(bytes) if core::is_probably_text(&bytes) => PreviewBody::Text(TextPreview {
-                text: String::from_utf8_lossy(&bytes).into_owned(),
+                text: Arc::new(String::from_utf8_lossy(&bytes).into_owned()),
                 first_line: request.scroll_line,
                 loaded_lines: bytes.iter().filter(|byte| **byte == b'\n').count() + 1,
+                next_byte_offset: bytes.len() as u64,
                 truncated: bytes.len() >= max_bytes,
             }),
             Ok(bytes) => {
                 let truncated = bytes.len() >= max_bytes;
                 PreviewBody::Binary(BinaryPreview {
-                    text: core::hexdump(&bytes),
+                    text: Arc::new(core::hexdump(&bytes)),
                     bytes_read: bytes.len(),
                     truncated,
                 })
@@ -335,9 +399,10 @@ mod tests {
         assert!(preview.apply_result(
             3,
             PreviewBody::Text(TextPreview {
-                text: "hello".to_string(),
+                text: "hello".to_string().into(),
                 first_line: 0,
                 loaded_lines: 1,
+                next_byte_offset: 6,
                 truncated: false,
             })
         ));
@@ -352,9 +417,10 @@ mod tests {
         assert!(!preview.apply_result(
             2,
             PreviewBody::Text(TextPreview {
-                text: "stale".to_string(),
+                text: "stale".to_string().into(),
                 first_line: 0,
                 loaded_lines: 1,
+                next_byte_offset: 6,
                 truncated: false,
             })
         ));
@@ -417,27 +483,29 @@ mod tests {
                 first_line: 2,
                 loaded_lines: 2,
                 ..
-            }) if text == "three\nfour\n"
+            }) if text.as_str() == "three\nfour\n"
         ));
     }
 
     #[test]
     fn text_preview_appends_adjacent_extension() {
         let mut preview = TextPreview {
-            text: "one\ntwo\n".to_string(),
+            text: "one\ntwo\n".to_string().into(),
             first_line: 0,
             loaded_lines: 2,
+            next_byte_offset: 8,
             truncated: true,
         };
 
         assert!(preview.append(TextPreview {
-            text: "three\nfour\n".to_string(),
+            text: "three\nfour\n".to_string().into(),
             first_line: 2,
             loaded_lines: 2,
+            next_byte_offset: 19,
             truncated: false,
         }));
 
-        assert_eq!(preview.text, "one\ntwo\nthree\nfour\n");
+        assert_eq!(preview.text.as_str(), "one\ntwo\nthree\nfour\n");
         assert_eq!(preview.loaded_lines, 4);
         assert!(!preview.truncated);
     }
@@ -445,19 +513,21 @@ mod tests {
     #[test]
     fn text_preview_rejects_non_adjacent_extension() {
         let mut preview = TextPreview {
-            text: "one\ntwo\n".to_string(),
+            text: "one\ntwo\n".to_string().into(),
             first_line: 0,
             loaded_lines: 2,
+            next_byte_offset: 8,
             truncated: true,
         };
 
         assert!(!preview.append(TextPreview {
-            text: "four\n".to_string(),
+            text: "four\n".to_string().into(),
             first_line: 3,
             loaded_lines: 1,
+            next_byte_offset: 13,
             truncated: false,
         }));
-        assert_eq!(preview.text, "one\ntwo\n");
+        assert_eq!(preview.text.as_str(), "one\ntwo\n");
         assert_eq!(preview.loaded_lines, 2);
         assert!(preview.truncated);
     }

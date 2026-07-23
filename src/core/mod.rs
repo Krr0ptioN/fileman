@@ -25,6 +25,6 @@ pub use model::{
 };
 pub use preview::{
     TextPreviewRead, format_preview_info, hexdump, hexdump_with_width, is_probably_text,
-    read_bytes_prefix, read_text_lines_prefix, read_text_preview,
+    read_bytes_prefix, read_text_lines_from, read_text_lines_prefix, read_text_preview,
 };
 pub use progress::TransferProgress;

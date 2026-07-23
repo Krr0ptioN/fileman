@@ -1,6 +1,6 @@
 use std::{
     fs,
-    io::{self, BufRead, Read},
+    io::{self, BufRead, Read, Seek, SeekFrom},
     path::Path,
 };
 
@@ -31,6 +31,7 @@ pub struct TextPreviewRead {
     pub text: String,
     pub lines_read: usize,
     pub bytes_read: usize,
+    pub next_byte_offset: u64,
     pub truncated: bool,
 }
 
@@ -40,23 +41,42 @@ pub fn read_text_lines_prefix(
     max_lines: usize,
     max_bytes: usize,
 ) -> anyhow::Result<TextPreviewRead> {
+    read_text_lines_from(path, 0, first_line, max_lines, max_bytes)
+}
+
+pub fn read_text_lines_from(
+    path: &Path,
+    byte_offset: u64,
+    first_line: usize,
+    max_lines: usize,
+    max_bytes: usize,
+) -> anyhow::Result<TextPreviewRead> {
     let file = fs::File::open(path)?;
     let file_len = file.metadata().ok().map(|metadata| metadata.len());
-    let mut reader = io::BufReader::new(file.take(max_bytes as u64));
+    let mut reader = io::BufReader::new(file);
+    reader.seek(SeekFrom::Start(byte_offset))?;
     let mut text = String::new();
     let mut line = Vec::new();
+    let lines_to_skip = match byte_offset {
+        0 => first_line,
+        _ => 0,
+    };
     let mut lines_read = 0usize;
     let mut bytes_read = 0usize;
 
-    while lines_read < first_line.saturating_add(max_lines) {
+    while lines_read < lines_to_skip.saturating_add(max_lines) && bytes_read < max_bytes {
         line.clear();
-        let read = reader.read_until(b'\n', &mut line)?;
+        let remaining = max_bytes.saturating_sub(bytes_read) as u64;
+        let read = reader
+            .by_ref()
+            .take(remaining)
+            .read_until(b'\n', &mut line)?;
         if read == 0 {
             break;
         }
 
         bytes_read += read;
-        if lines_read >= first_line {
+        if lines_read >= lines_to_skip {
             text.push_str(&String::from_utf8_lossy(&line));
         }
         lines_read += 1;
@@ -66,13 +86,15 @@ pub fn read_text_lines_prefix(
         }
     }
 
-    let loaded_lines = lines_read.saturating_sub(first_line).min(max_lines);
+    let loaded_lines = lines_read.saturating_sub(lines_to_skip).min(max_lines);
+    let next_byte_offset = byte_offset.saturating_add(bytes_read as u64);
     Ok(TextPreviewRead {
         text,
         lines_read: loaded_lines,
         bytes_read,
+        next_byte_offset,
         truncated: file_len
-            .map(|len| (bytes_read as u64) < len)
+            .map(|len| next_byte_offset < len)
             .unwrap_or(bytes_read >= max_bytes),
     })
 }
@@ -107,7 +129,7 @@ pub fn is_probably_text(bytes: &[u8]) -> bool {
 
 fn read_prefix(path: &Path, max_bytes: usize) -> io::Result<Vec<u8>> {
     let mut file = fs::File::open(path)?;
-    let mut buf = Vec::new();
+    let mut buf = Vec::with_capacity(max_bytes);
     file.by_ref().take(max_bytes as u64).read_to_end(&mut buf)?;
     Ok(buf)
 }
@@ -141,4 +163,31 @@ fn printable_ratio(bytes: &[u8]) -> f32 {
         .filter(|byte| matches!(byte, 0x09 | 0x0A | 0x0D | 0x20..=0x7E | 0x80..=0xFF))
         .count();
     printable as f32 / bytes.len().max(1) as f32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_text_lines_from;
+    use std::fs;
+
+    #[test]
+    fn text_extension_resumes_from_byte_offset() {
+        let path = std::env::temp_dir().join(format!(
+            "stiff-core-preview-offset-{}.txt",
+            std::process::id()
+        ));
+        fs::write(&path, "one\ntwo\nthree\nfour\n").unwrap();
+
+        let first = read_text_lines_from(&path, 0, 0, 2, 1024).unwrap();
+        let second =
+            read_text_lines_from(&path, first.next_byte_offset, first.lines_read, 2, 1024).unwrap();
+
+        fs::remove_file(path).unwrap();
+
+        assert_eq!(first.text, "one\ntwo\n");
+        assert_eq!(first.next_byte_offset, 8);
+        assert_eq!(second.text, "three\nfour\n");
+        assert_eq!(second.lines_read, 2);
+        assert!(!second.truncated);
+    }
 }
