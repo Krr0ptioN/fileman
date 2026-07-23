@@ -555,13 +555,26 @@ struct TrackedReader<'a, R: Read> {
     cancel: &'a AtomicBool,
     progress: Option<&'a crate::core::TransferProgress>,
 }
+
+#[derive(Debug)]
+struct TransferCancelled;
+
+impl std::fmt::Display for TransferCancelled {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("transfer cancelled")
+    }
+}
+
+impl std::error::Error for TransferCancelled {}
+
+fn cancellation_io_error() -> io::Error {
+    io::Error::new(io::ErrorKind::Interrupted, TransferCancelled)
+}
+
 impl<R: Read> Read for TrackedReader<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.cancel.load(Ordering::Relaxed) {
-            return Err(io::Error::new(
-                io::ErrorKind::Interrupted,
-                "transfer cancelled",
-            ));
+            return Err(cancellation_io_error());
         }
         let n = self.inner.read(buf)?;
         if let Some(p) = self.progress {
@@ -580,10 +593,7 @@ struct TrackedWriter<'a, W: Write> {
 impl<W: Write> Write for TrackedWriter<'_, W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if self.cancel.load(Ordering::Relaxed) {
-            return Err(io::Error::new(
-                io::ErrorKind::Interrupted,
-                "transfer cancelled",
-            ));
+            return Err(cancellation_io_error());
         }
         let n = self.inner.write(buf)?;
         if let Some(p) = self.progress {
@@ -597,11 +607,12 @@ impl<W: Write> Write for TrackedWriter<'_, W> {
 }
 
 fn is_cancel_error(error: &io::Error) -> bool {
-    error.kind() == io::ErrorKind::Interrupted
-        || error
-            .get_ref()
-            .and_then(|source| source.downcast_ref::<io::Error>())
-            .is_some_and(is_cancel_error)
+    error.get_ref().is_some_and(|source| {
+        source.is::<TransferCancelled>()
+            || source
+                .downcast_ref::<io::Error>()
+                .is_some_and(is_cancel_error)
+    })
 }
 
 /// Copy a remote directory tree to a local path.
@@ -1119,9 +1130,15 @@ mod tests {
 
     #[test]
     fn cancellation_detection_follows_io_error_sources() {
-        let interrupted = io::Error::new(io::ErrorKind::Interrupted, "cancelled");
-        let wrapped = io::Error::new(io::ErrorKind::Other, interrupted);
+        let wrapped = io::Error::new(io::ErrorKind::Other, super::cancellation_io_error());
 
         assert!(is_cancel_error(&wrapped));
+    }
+
+    #[test]
+    fn ordinary_interrupted_io_is_not_user_cancellation() {
+        let interrupted = io::Error::new(io::ErrorKind::Interrupted, "system call interrupted");
+
+        assert!(!is_cancel_error(&interrupted));
     }
 }
