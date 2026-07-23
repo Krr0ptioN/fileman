@@ -21,6 +21,22 @@ pub struct BrowserPanel {
 }
 
 impl BrowserPanel {
+    pub fn replace_rows(&mut self, rows: Vec<FileRow>) {
+        self.rows = Arc::new(rows);
+    }
+
+    pub fn clear_rows(&mut self) {
+        Arc::make_mut(&mut self.rows).clear();
+    }
+
+    pub fn marked_mut(&mut self) -> &mut HashSet<PathBuf> {
+        Arc::make_mut(&mut self.marked)
+    }
+
+    pub fn clear_marks(&mut self) {
+        self.marked_mut().clear();
+    }
+
     pub fn select_relative(&mut self, delta: isize) {
         if self.rows.is_empty() {
             self.selected_index = 0;

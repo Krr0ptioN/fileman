@@ -40,7 +40,7 @@ impl<'a> BrowserCommandState<'a> {
     }
 
     pub fn clear_marks(&mut self) {
-        std::sync::Arc::make_mut(&mut self.active_panel_mut().marked).clear();
+        self.active_panel_mut().clear_marks();
     }
 
     pub fn start_loading(panel: &mut BrowserPanel, path: std::path::PathBuf) -> u64 {
@@ -48,7 +48,7 @@ impl<'a> BrowserCommandState<'a> {
         panel.loading = true;
         panel.error = None;
         panel.path = path;
-        std::sync::Arc::make_mut(&mut panel.rows).clear();
+        panel.clear_rows();
         panel.selected_index = 0;
         panel.load_generation
     }
@@ -68,15 +68,17 @@ impl<'a> BrowserCommandState<'a> {
         let status = match result {
             Ok(entries) => {
                 panel.path = path;
-                panel.rows = std::sync::Arc::new(
+                panel.replace_rows(
                     entries
                         .into_iter()
                         .filter(|entry| is_visible_entry(&entry.name, panel.show_hidden))
                         .map(FileRow::from_entry)
                         .collect(),
                 );
-                std::sync::Arc::make_mut(&mut panel.marked)
-                    .retain(|path| panel.rows.iter().any(|row| &row.path == path));
+                let rows = panel.rows.clone();
+                panel
+                    .marked_mut()
+                    .retain(|path| rows.iter().any(|row| &row.path == path));
                 panel.selected_index = prefer_name
                     .and_then(|name| panel.rows.iter().position(|row| row.name == name))
                     .unwrap_or(0);
@@ -85,7 +87,7 @@ impl<'a> BrowserCommandState<'a> {
                 format!("{} rows, selected {selected}", panel.rows.len())
             }
             Err(error) => {
-                std::sync::Arc::make_mut(&mut panel.rows).clear();
+                panel.clear_rows();
                 panel.selected_index = 0;
                 panel.error = Some(error.to_string());
                 format!("cannot load {}", panel.path.display())

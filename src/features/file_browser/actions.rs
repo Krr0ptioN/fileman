@@ -31,9 +31,11 @@ pub fn toggle_marked(panel: &mut BrowserPanel, count: usize) -> usize {
         let Some(row) = panel.rows.get(panel.selected_index) else {
             break;
         };
-        let marked = std::sync::Arc::make_mut(&mut panel.marked);
-        if row.name != ".." && !marked.remove(&row.path) {
-            marked.insert(row.path.clone());
+        let selectable = row.name != "..";
+        let path = row.path.clone();
+        let marked = panel.marked_mut();
+        if selectable && !marked.remove(&path) {
+            marked.insert(path);
         }
         if panel.selected_index + 1 < panel.rows.len() {
             panel.selected_index += 1;
@@ -51,12 +53,12 @@ pub fn toggle_all_marks(panel: &mut BrowserPanel) -> String {
 
     match all_selectable_marked(panel) {
         true => {
-            std::sync::Arc::make_mut(&mut panel.marked).clear();
+            panel.clear_marks();
             "marks cleared".to_string()
         }
         false => {
             let rows = panel.rows.clone();
-            let marked = std::sync::Arc::make_mut(&mut panel.marked);
+            let marked = panel.marked_mut();
             for row in rows.iter() {
                 if row.name != ".." {
                     marked.insert(row.path.clone());

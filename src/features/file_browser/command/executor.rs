@@ -285,7 +285,7 @@ mod tests {
     #[test]
     fn new_directory_enters_input_mode_without_rows() {
         let mut primary = panel(PanelSide::Left);
-        std::sync::Arc::make_mut(&mut primary.rows).clear();
+        primary.clear_rows();
         let mut secondary = panel(PanelSide::Right);
         let mut active = PanelSide::Left;
         let mut input_mode = InputMode::Normal;
@@ -314,7 +314,7 @@ mod tests {
     #[test]
     fn toggle_hidden_reloads_empty_panel_and_changes_visibility_mode() {
         let mut primary = panel(PanelSide::Left);
-        std::sync::Arc::make_mut(&mut primary.rows).clear();
+        primary.clear_rows();
         let mut secondary = panel(PanelSide::Right);
         let mut active = PanelSide::Left;
         let mut input_mode = InputMode::Normal;
@@ -342,7 +342,7 @@ mod tests {
     #[test]
     fn toggle_ignored_reloads_empty_panel_and_changes_visibility_mode() {
         let mut primary = panel(PanelSide::Left);
-        std::sync::Arc::make_mut(&mut primary.rows).clear();
+        primary.clear_rows();
         let mut secondary = panel(PanelSide::Right);
         let mut active = PanelSide::Left;
         let mut input_mode = InputMode::Normal;
