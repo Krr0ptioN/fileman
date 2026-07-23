@@ -62,6 +62,29 @@ pub struct SshHostConfig {
     pub identity_files: Vec<String>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum SftpTransferError {
+    Cancelled,
+    Operation(String),
+}
+
+impl std::fmt::Display for SftpTransferError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::Cancelled => formatter.write_str("transfer cancelled"),
+            Self::Operation(ref message) => formatter.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for SftpTransferError {}
+
+impl From<String> for SftpTransferError {
+    fn from(message: String) -> Self {
+        Self::Operation(message)
+    }
+}
+
 /// Parse `~/.ssh/config` for Host/Hostname/User/Port/IdentityFile.
 pub fn parse_ssh_config(content: &str) -> HashMap<String, SshHostConfig> {
     let mut hosts: HashMap<String, SshHostConfig> = HashMap::new();
@@ -146,50 +169,44 @@ fn expand_tilde(path: &str) -> String {
 }
 
 #[cfg(unix)]
-fn set_tcp_keepalive(tcp: &TcpStream) {
-    use std::os::fd::AsRawFd;
-    let fd = tcp.as_raw_fd();
-    unsafe {
-        let enable: libc::c_int = 1;
+fn set_socket_option(
+    fd: std::os::fd::RawFd,
+    level: libc::c_int,
+    name: libc::c_int,
+    value: libc::c_int,
+) -> io::Result<()> {
+    // SAFETY: `fd` comes from a live `TcpStream`, and the value pointer and
+    // length describe a valid `c_int` for the duration of the call.
+    let result = unsafe {
         libc::setsockopt(
             fd,
-            libc::SOL_SOCKET,
-            libc::SO_KEEPALIVE,
-            &enable as *const _ as *const libc::c_void,
+            level,
+            name,
+            &value as *const _ as *const libc::c_void,
             std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-        );
-        // Start probing after 15 seconds of idle
-        let idle: libc::c_int = 15;
-        #[cfg(target_os = "macos")]
-        const KEEPIDLE: libc::c_int = libc::TCP_KEEPALIVE;
-        #[cfg(not(target_os = "macos"))]
-        const KEEPIDLE: libc::c_int = libc::TCP_KEEPIDLE;
-        libc::setsockopt(
-            fd,
-            libc::IPPROTO_TCP,
-            KEEPIDLE,
-            &idle as *const _ as *const libc::c_void,
-            std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-        );
-        // Send a probe every 5 seconds
-        let interval: libc::c_int = 5;
-        libc::setsockopt(
-            fd,
-            libc::IPPROTO_TCP,
-            libc::TCP_KEEPINTVL,
-            &interval as *const _ as *const libc::c_void,
-            std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-        );
-        // Give up after 3 failed probes (~15s after idle detection)
-        let count: libc::c_int = 3;
-        libc::setsockopt(
-            fd,
-            libc::IPPROTO_TCP,
-            libc::TCP_KEEPCNT,
-            &count as *const _ as *const libc::c_void,
-            std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-        );
+        )
+    };
+    match result {
+        0 => Ok(()),
+        _ => Err(io::Error::last_os_error()),
     }
+}
+
+#[cfg(unix)]
+fn set_tcp_keepalive(tcp: &TcpStream) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+
+    let fd = tcp.as_raw_fd();
+    set_socket_option(fd, libc::SOL_SOCKET, libc::SO_KEEPALIVE, 1)?;
+    // Start probing after 15 seconds of idle.
+    #[cfg(target_os = "macos")]
+    const KEEPIDLE: libc::c_int = libc::TCP_KEEPALIVE;
+    #[cfg(not(target_os = "macos"))]
+    const KEEPIDLE: libc::c_int = libc::TCP_KEEPIDLE;
+    set_socket_option(fd, libc::IPPROTO_TCP, KEEPIDLE, 15)?;
+    // Send a probe every 5 seconds and give up after 3 failed probes.
+    set_socket_option(fd, libc::IPPROTO_TCP, libc::TCP_KEEPINTVL, 5)?;
+    set_socket_option(fd, libc::IPPROTO_TCP, libc::TCP_KEEPCNT, 3)
 }
 
 /// Connect to an SSH host using config resolution. Tries ssh-agent, then key files.
@@ -208,11 +225,12 @@ pub fn connect(
 
     let addr = format!("{actual_host}:{port}");
     let tcp = TcpStream::connect(&addr).map_err(|e| format!("TCP connect to {addr}: {e}"))?;
-    tcp.set_nodelay(true).ok();
+    tcp.set_nodelay(true)
+        .map_err(|e| format!("configure TCP_NODELAY for {addr}: {e}"))?;
     // Enable TCP keepalive so the OS detects dead connections after sleep/network changes.
     // Probe starts after 15s idle, then every 5s, giving up after ~30s total.
     #[cfg(unix)]
-    set_tcp_keepalive(&tcp);
+    set_tcp_keepalive(&tcp).map_err(|e| format!("configure TCP keepalive for {addr}: {e}"))?;
 
     let mut session = Session::new().map_err(|e| format!("SSH session init: {e}"))?;
     session.set_tcp_stream(tcp);
@@ -540,7 +558,10 @@ struct TrackedReader<'a, R: Read> {
 impl<R: Read> Read for TrackedReader<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.cancel.load(Ordering::Relaxed) {
-            return Err(io::Error::other("Cancelled"));
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "transfer cancelled",
+            ));
         }
         let n = self.inner.read(buf)?;
         if let Some(p) = self.progress {
@@ -559,7 +580,10 @@ struct TrackedWriter<'a, W: Write> {
 impl<W: Write> Write for TrackedWriter<'_, W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if self.cancel.load(Ordering::Relaxed) {
-            return Err(io::Error::other("Cancelled"));
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "transfer cancelled",
+            ));
         }
         let n = self.inner.write(buf)?;
         if let Some(p) = self.progress {
@@ -572,8 +596,12 @@ impl<W: Write> Write for TrackedWriter<'_, W> {
     }
 }
 
-fn is_cancel_err(e: &io::Error) -> bool {
-    e.kind() == io::ErrorKind::Other && e.to_string() == "Cancelled"
+fn is_cancel_error(error: &io::Error) -> bool {
+    error.kind() == io::ErrorKind::Interrupted
+        || error
+            .get_ref()
+            .and_then(|source| source.downcast_ref::<io::Error>())
+            .is_some_and(is_cancel_error)
 }
 
 /// Copy a remote directory tree to a local path.
@@ -585,7 +613,7 @@ pub fn copy_remote_dir_to_local_via_tar(
     name: &str,
     cancel: &AtomicBool,
     progress: Option<&crate::core::TransferProgress>,
-) -> Result<(), String> {
+) -> Result<(), SftpTransferError> {
     let (src_parent, src_name) = match src_path.rfind('/') {
         Some(pos) => (&src_path[..pos], &src_path[pos + 1..]),
         None => (".", src_path),
@@ -619,16 +647,11 @@ pub fn copy_remote_dir_to_local_via_tar(
         progress,
     };
     let mut archive = tar::Archive::new(reader);
-    let unpack_result = archive.unpack(dst_dir).map_err(|e| {
-        if e.get_ref().is_some_and(|s| {
-            is_cancel_err(
-                s.downcast_ref::<io::Error>()
-                    .unwrap_or(&io::Error::other("")),
-            )
-        }) {
-            "Cancelled".to_string()
+    let unpack_result = archive.unpack(dst_dir).map_err(|error| {
+        if is_cancel_error(&error) {
+            SftpTransferError::Cancelled
         } else {
-            format!("tar extract: {e}")
+            SftpTransferError::Operation(format!("tar extract: {error}"))
         }
     });
 
@@ -650,7 +673,7 @@ pub fn copy_local_dir_to_remote_via_tar(
     dst_dir: &str,
     cancel: &AtomicBool,
     progress: Option<&crate::core::TransferProgress>,
-) -> Result<(), String> {
+) -> Result<(), SftpTransferError> {
     let src_name = src_path
         .file_name()
         .and_then(|s| s.to_str())
@@ -687,8 +710,8 @@ pub fn copy_local_dir_to_remote_via_tar(
 
     match result {
         Ok(()) => {}
-        Err(e) if is_cancel_err(&e) => return Err("Cancelled".to_string()),
-        Err(e) => return Err(format!("tar create: {e}")),
+        Err(error) if is_cancel_error(&error) => return Err(SftpTransferError::Cancelled),
+        Err(error) => return Err(SftpTransferError::Operation(format!("tar create: {error}"))),
     }
 
     dst_ch.send_eof().map_err(|e| format!("send_eof: {e}"))?;
@@ -697,7 +720,7 @@ pub fn copy_local_dir_to_remote_via_tar(
         .map_err(|e| format!("dst wait_close: {e}"))?;
     let exit = dst_ch.exit_status().unwrap_or(-1);
     if exit != 0 {
-        return Err(format!("remote tar xf exited with status {exit}"));
+        return Err(format!("remote tar xf exited with status {exit}").into());
     }
     Ok(())
 }
@@ -772,7 +795,7 @@ pub fn copy_cross_host_via_tar(
     name: &str,
     cancel: &AtomicBool,
     progress: Option<&crate::core::TransferProgress>,
-) -> Result<(), String> {
+) -> Result<(), SftpTransferError> {
     let (src_parent, src_name) = match src_path.rfind('/') {
         Some(pos) => (&src_path[..pos], &src_path[pos + 1..]),
         None => (".", src_path),
@@ -815,7 +838,9 @@ pub fn copy_cross_host_via_tar(
     let mut buf = vec![0u8; 256 * 1024];
     loop {
         if cancel.load(Ordering::Relaxed) {
-            return Err("Cancelled".to_string());
+            src_session.set_timeout(30_000);
+            dst_session.set_timeout(30_000);
+            return Err(SftpTransferError::Cancelled);
         }
         match src_ch.read(&mut buf) {
             Ok(0) => break,
@@ -831,7 +856,7 @@ pub fn copy_cross_host_via_tar(
             Err(e) => {
                 src_session.set_timeout(30_000);
                 dst_session.set_timeout(30_000);
-                return Err(format!("relay read: {e}"));
+                return Err(format!("relay read: {e}").into());
             }
         }
     }
@@ -846,7 +871,7 @@ pub fn copy_cross_host_via_tar(
         .map_err(|e| format!("dst wait_close: {e}"))?;
     let exit = dst_ch.exit_status().unwrap_or(-1);
     if exit != 0 {
-        return Err(format!("tar xzf exited with status {exit}"));
+        return Err(format!("tar xzf exited with status {exit}").into());
     }
 
     // Rename on destination if the target name differs from the source name.
@@ -865,7 +890,7 @@ pub fn copy_cross_host_via_tar(
             .map_err(|e| format!("mv wait_close: {e}"))?;
         let mv_exit = mv_ch.exit_status().unwrap_or(-1);
         if mv_exit != 0 {
-            return Err(format!("mv exited with status {mv_exit}"));
+            return Err(format!("mv exited with status {mv_exit}").into());
         }
     }
 
@@ -904,7 +929,7 @@ pub fn copy_remote_to_local(
     sftp: &Sftp,
     remote_path: &str,
     local_dst: &Path,
-) -> Result<(), String> {
+) -> Result<(), SftpTransferError> {
     copy_remote_to_local_progress(sftp, remote_path, local_dst, None, None)
 }
 
@@ -914,7 +939,7 @@ pub fn copy_remote_to_local_progress(
     local_dst: &Path,
     cancel: Option<&AtomicBool>,
     progress: Option<&crate::core::TransferProgress>,
-) -> Result<(), String> {
+) -> Result<(), SftpTransferError> {
     let stat = sftp.stat(Path::new(remote_path)).ok();
     if let Some(p) = progress {
         p.reset(stat.and_then(|s| s.size).unwrap_or(0));
@@ -927,7 +952,7 @@ pub fn copy_remote_to_local_progress(
     let mut buf = vec![0u8; 64 * 1024];
     loop {
         if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
-            return Err("Cancelled".to_string());
+            return Err(SftpTransferError::Cancelled);
         }
         match remote_file.read(&mut buf) {
             Ok(0) => break,
@@ -940,7 +965,7 @@ pub fn copy_remote_to_local_progress(
                 }
             }
             Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            Err(e) => return Err(format!("read remote: {e}")),
+            Err(e) => return Err(format!("read remote: {e}").into()),
         }
     }
     Ok(())
@@ -951,7 +976,7 @@ pub fn copy_local_to_remote(
     sftp: &Sftp,
     local_src: &Path,
     remote_path: &str,
-) -> Result<(), String> {
+) -> Result<(), SftpTransferError> {
     copy_local_to_remote_progress(sftp, local_src, remote_path, None, None)
 }
 
@@ -961,7 +986,7 @@ pub fn copy_local_to_remote_progress(
     remote_path: &str,
     cancel: Option<&AtomicBool>,
     progress: Option<&crate::core::TransferProgress>,
-) -> Result<(), String> {
+) -> Result<(), SftpTransferError> {
     if let Some(p) = progress {
         let size = std::fs::metadata(local_src).map(|m| m.len()).unwrap_or(0);
         p.reset(size);
@@ -974,7 +999,7 @@ pub fn copy_local_to_remote_progress(
     let mut buf = vec![0u8; 64 * 1024];
     loop {
         if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
-            return Err("Cancelled".to_string());
+            return Err(SftpTransferError::Cancelled);
         }
         match local_file.read(&mut buf) {
             Ok(0) => break,
@@ -987,7 +1012,7 @@ pub fn copy_local_to_remote_progress(
                 }
             }
             Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            Err(e) => return Err(format!("read local: {e}")),
+            Err(e) => return Err(format!("read local: {e}").into()),
         }
     }
     Ok(())
@@ -1064,5 +1089,39 @@ pub fn load_ssh_config() -> HashMap<String, SshHostConfig> {
     match std::fs::read_to_string(&config_path) {
         Ok(content) => parse_ssh_config(&content),
         Err(_) => HashMap::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        io::{self, Cursor, Read},
+        sync::atomic::AtomicBool,
+    };
+
+    use super::{TrackedReader, is_cancel_error};
+
+    #[test]
+    fn tracked_reader_uses_interrupted_for_cancellation() {
+        let cancel = AtomicBool::new(true);
+        let mut reader = TrackedReader {
+            inner: Cursor::new(b"content"),
+            cancel: &cancel,
+            progress: None,
+        };
+        let mut buffer = [0u8; 8];
+
+        let error = reader.read(&mut buffer).expect_err("read should cancel");
+
+        assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+        assert!(is_cancel_error(&error));
+    }
+
+    #[test]
+    fn cancellation_detection_follows_io_error_sources() {
+        let interrupted = io::Error::new(io::ErrorKind::Interrupted, "cancelled");
+        let wrapped = io::Error::new(io::ErrorKind::Other, interrupted);
+
+        assert!(is_cancel_error(&wrapped));
     }
 }
