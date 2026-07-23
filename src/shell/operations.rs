@@ -457,6 +457,7 @@ impl StiffShell {
                         return;
                     }
                     shell.preview_extension_start_line = None;
+                    shell.preview_preload = None;
                     let Some(preview) = shell.preview.as_mut() else {
                         return;
                     };

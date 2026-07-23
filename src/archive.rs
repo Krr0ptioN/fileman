@@ -9,26 +9,29 @@ use crate::core::{DirEntry, EntryLocation, format_mode, format_size};
 
 const ARCHIVE_READ_BUFFER: usize = 1024 * 1024;
 
+fn open_remote_archive_file(host: &str, remote_path: &str) -> io::Result<ssh2::File> {
+    let session = crate::sftp::get_session(host)
+        .ok_or_else(|| io::Error::other(format!("no active SFTP session for host {host}")))?;
+    let sftp = session
+        .lock()
+        .map_err(|_| io::Error::other("session mutex poisoned"))?
+        .session
+        .sftp()
+        .map_err(|e| io::Error::other(format!("open SFTP channel for {host}: {e}")))?;
+    sftp.open(Path::new(remote_path))
+        .map_err(|e| io::Error::other(format!("open remote {remote_path}: {e}")))
+}
+
 /// Run `f` with a `Read + Seek` handle to the archive. For local paths this
-/// opens a buffered file; for synthetic SFTP archive paths it clones the SFTP
-/// handle while holding the registry lock, then releases the lock before doing
-/// archive I/O.
+/// opens a buffered file; for synthetic SFTP archive paths it opens a dedicated
+/// SFTP channel while holding the registry lock, then releases the lock before
+/// doing archive I/O.
 pub fn with_seek_reader<R, F>(archive_path: &Path, f: F) -> io::Result<R>
 where
     F: FnOnce(&mut (dyn ReadSeek + '_)) -> io::Result<R>,
 {
     if let Some((host, remote_path)) = crate::sftp::decode_archive_path(archive_path) {
-        let session = crate::sftp::get_session(&host)
-            .ok_or_else(|| io::Error::other(format!("no active SFTP session for host {host}")))?;
-        let sftp = session
-            .lock()
-            .map_err(|_| io::Error::other("session mutex poisoned"))?
-            .session
-            .sftp()
-            .map_err(|e| io::Error::other(format!("open SFTP channel for {host}: {e}")))?;
-        let mut file = sftp
-            .open(Path::new(&remote_path))
-            .map_err(|e| io::Error::other(format!("open remote {remote_path}: {e}")))?;
+        let mut file = open_remote_archive_file(&host, &remote_path)?;
         f(&mut file)
     } else {
         let file = fs::File::open(archive_path)?;
@@ -44,17 +47,7 @@ where
     F: FnOnce(Box<dyn Read + '_>) -> io::Result<R>,
 {
     if let Some((host, remote_path)) = crate::sftp::decode_archive_path(archive_path) {
-        let session = crate::sftp::get_session(&host)
-            .ok_or_else(|| io::Error::other(format!("no active SFTP session for host {host}")))?;
-        let sftp = session
-            .lock()
-            .map_err(|_| io::Error::other("session mutex poisoned"))?
-            .session
-            .sftp()
-            .map_err(|e| io::Error::other(format!("open SFTP channel for {host}: {e}")))?;
-        let file = sftp
-            .open(Path::new(&remote_path))
-            .map_err(|e| io::Error::other(format!("open remote {remote_path}: {e}")))?;
+        let file = open_remote_archive_file(&host, &remote_path)?;
         f(Box::new(file))
     } else {
         let file = fs::File::open(archive_path)?;
@@ -65,6 +58,22 @@ where
 
 pub trait ReadSeek: Read + Seek {}
 impl<T: Read + Seek + ?Sized> ReadSeek for T {}
+
+fn path_extension_matches(path: &Path, expected: &str) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(expected))
+}
+
+fn file_name_has_suffix(path: &Path, suffixes: &[&str]) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    suffixes.iter().any(|suffix| {
+        name.len() >= suffix.len()
+            && name.as_bytes()[name.len() - suffix.len()..].eq_ignore_ascii_case(suffix.as_bytes())
+    })
+}
 
 pub trait ContainerPlugin: Sync {
     fn kind(&self) -> ContainerKind;
@@ -1074,12 +1083,7 @@ impl ContainerPlugin for ZipPlugin {
     }
 
     fn matches_path(&self, path: &Path) -> bool {
-        matches!(
-            path.extension()
-                .and_then(|s| s.to_str())
-                .map(|s| s.to_ascii_lowercase()),
-            Some(ext) if ext == "zip"
-        )
+        path_extension_matches(path, "zip")
     }
 
     fn read_dir(&self, archive_path: &Path, cwd: &str) -> anyhow::Result<Vec<DirEntry>> {
@@ -1126,12 +1130,7 @@ impl ContainerPlugin for TarPlugin {
     }
 
     fn matches_path(&self, path: &Path) -> bool {
-        let name = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .map(|s| s.to_ascii_lowercase())
-            .unwrap_or_default();
-        name.ends_with(".tar")
+        file_name_has_suffix(path, &[".tar"])
     }
 
     fn read_dir(&self, archive_path: &Path, cwd: &str) -> anyhow::Result<Vec<DirEntry>> {
@@ -1184,12 +1183,7 @@ impl ContainerPlugin for TarGzPlugin {
     }
 
     fn matches_path(&self, path: &Path) -> bool {
-        let name = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .map(|s| s.to_ascii_lowercase())
-            .unwrap_or_default();
-        name.ends_with(".tar.gz") || name.ends_with(".tgz")
+        file_name_has_suffix(path, &[".tar.gz", ".tgz"])
     }
 
     fn read_dir(&self, archive_path: &Path, cwd: &str) -> anyhow::Result<Vec<DirEntry>> {
@@ -1324,12 +1318,7 @@ impl ContainerPlugin for TarBz2Plugin {
     }
 
     fn matches_path(&self, path: &Path) -> bool {
-        let name = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .map(|s| s.to_ascii_lowercase())
-            .unwrap_or_default();
-        name.ends_with(".tar.bz2") || name.ends_with(".tbz") || name.ends_with(".tbz2")
+        file_name_has_suffix(path, &[".tar.bz2", ".tbz", ".tbz2"])
     }
 
     fn read_dir(&self, archive_path: &Path, cwd: &str) -> anyhow::Result<Vec<DirEntry>> {
@@ -1354,5 +1343,27 @@ impl ContainerPlugin for TarBz2Plugin {
             let decoder = bzip2::read::BzDecoder::new(reader);
             tar_entry_meta(decoder, inner_path)
         })?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ContainerKind, container_kind_from_path};
+    use std::path::Path;
+
+    #[test]
+    fn archive_classification_is_ascii_case_insensitive() {
+        assert!(matches!(
+            container_kind_from_path(Path::new("backup.ZIP")),
+            Some(ContainerKind::Zip)
+        ));
+        assert!(matches!(
+            container_kind_from_path(Path::new("backup.TAR.GZ")),
+            Some(ContainerKind::TarGz)
+        ));
+        assert!(matches!(
+            container_kind_from_path(Path::new("backup.TBZ2")),
+            Some(ContainerKind::TarBz2)
+        ));
     }
 }

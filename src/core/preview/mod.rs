@@ -79,7 +79,12 @@ pub fn read_text_lines_from(
         if lines_read >= lines_to_skip {
             text.push_str(&String::from_utf8_lossy(&line));
         }
-        lines_read += 1;
+        let next_byte_offset = byte_offset.saturating_add(bytes_read as u64);
+        let complete_line =
+            line.ends_with(b"\n") || file_len.is_some_and(|file_len| next_byte_offset >= file_len);
+        if complete_line {
+            lines_read += 1;
+        }
 
         if bytes_read >= max_bytes {
             break;
@@ -189,5 +194,25 @@ mod tests {
         assert_eq!(second.text, "three\nfour\n");
         assert_eq!(second.lines_read, 2);
         assert!(!second.truncated);
+    }
+
+    #[test]
+    fn text_extension_does_not_double_count_split_line() {
+        let path = std::env::temp_dir().join(format!(
+            "stiff-core-preview-long-line-{}.txt",
+            std::process::id()
+        ));
+        fs::write(&path, "abcdefgh\nnext\n").unwrap();
+
+        let first = read_text_lines_from(&path, 0, 0, 2, 4).unwrap();
+        let second =
+            read_text_lines_from(&path, first.next_byte_offset, first.lines_read, 2, 16).unwrap();
+
+        fs::remove_file(path).unwrap();
+
+        assert_eq!(first.text, "abcd");
+        assert_eq!(first.lines_read, 0);
+        assert_eq!(second.text, "efgh\nnext\n");
+        assert_eq!(second.lines_read, 2);
     }
 }

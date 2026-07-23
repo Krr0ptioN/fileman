@@ -2,7 +2,7 @@ use std::{
     collections::VecDeque,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
-    time::SystemTime,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use crate::core;
@@ -243,6 +243,20 @@ trait PreviewHandler {
 struct ArchivePreviewHandler;
 
 fn archive_listing_cache_key(path: &Path) -> ArchiveListingCacheKey {
+    if let Some((host, remote_path)) = crate::sftp::decode_archive_path(path)
+        && let Some(session) = crate::sftp::get_session(&host)
+        && let Ok(session) = session.lock()
+        && let Ok(stat) = session.sftp.stat(Path::new(&remote_path))
+    {
+        return ArchiveListingCacheKey {
+            path: path.to_path_buf(),
+            len: stat.size,
+            modified: stat
+                .mtime
+                .and_then(|seconds| UNIX_EPOCH.checked_add(Duration::from_secs(seconds))),
+        };
+    }
+
     let metadata = path.metadata().ok();
     ArchiveListingCacheKey {
         path: path.to_path_buf(),
