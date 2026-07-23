@@ -103,7 +103,7 @@ impl StiffShell {
                     match result {
                         Ok(status) => {
                             shell.status = status;
-                            shell.active_panel_mut().marked.clear();
+                            std::sync::Arc::make_mut(&mut shell.active_panel_mut().marked).clear();
                             shell.reload_panels_after_operation(cx);
                         }
                         Err(error) => shell.status = error.to_string(),

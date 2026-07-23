@@ -40,7 +40,7 @@ impl<'a> BrowserCommandState<'a> {
     }
 
     pub fn clear_marks(&mut self) {
-        self.active_panel_mut().marked.clear();
+        std::sync::Arc::make_mut(&mut self.active_panel_mut().marked).clear();
     }
 
     pub fn start_loading(panel: &mut BrowserPanel, path: std::path::PathBuf) -> u64 {
@@ -48,7 +48,7 @@ impl<'a> BrowserCommandState<'a> {
         panel.loading = true;
         panel.error = None;
         panel.path = path;
-        panel.rows.clear();
+        std::sync::Arc::make_mut(&mut panel.rows).clear();
         panel.selected_index = 0;
         panel.load_generation
     }
@@ -68,13 +68,14 @@ impl<'a> BrowserCommandState<'a> {
         let status = match result {
             Ok(entries) => {
                 panel.path = path;
-                panel.rows = entries
-                    .into_iter()
-                    .filter(|entry| is_visible_entry(&entry.name, panel.show_hidden))
-                    .map(FileRow::from_entry)
-                    .collect();
-                panel
-                    .marked
+                panel.rows = std::sync::Arc::new(
+                    entries
+                        .into_iter()
+                        .filter(|entry| is_visible_entry(&entry.name, panel.show_hidden))
+                        .map(FileRow::from_entry)
+                        .collect(),
+                );
+                std::sync::Arc::make_mut(&mut panel.marked)
                     .retain(|path| panel.rows.iter().any(|row| &row.path == path));
                 panel.selected_index = prefer_name
                     .and_then(|name| panel.rows.iter().position(|row| row.name == name))
@@ -84,7 +85,7 @@ impl<'a> BrowserCommandState<'a> {
                 format!("{} rows, selected {selected}", panel.rows.len())
             }
             Err(error) => {
-                panel.rows.clear();
+                std::sync::Arc::make_mut(&mut panel.rows).clear();
                 panel.selected_index = 0;
                 panel.error = Some(error.to_string());
                 format!("cannot load {}", panel.path.display())
@@ -138,10 +139,10 @@ mod tests {
             title: "Primary",
             path: PathBuf::from("/tmp"),
             selected_index: 1,
-            rows: vec![row("old-a"), row("old-b")],
+            rows: vec![row("old-a"), row("old-b")].into(),
             show_hidden: false,
             show_ignored: false,
-            marked: HashSet::from([PathBuf::from("/tmp/old-a")]),
+            marked: HashSet::from([PathBuf::from("/tmp/old-a")]).into(),
             loading: false,
             error: Some("previous error".to_string()),
             load_generation: 7,
@@ -190,7 +191,8 @@ mod tests {
         panel.marked = HashSet::from([
             PathBuf::from("/next/keep.txt"),
             PathBuf::from("/tmp/stale.txt"),
-        ]);
+        ])
+        .into();
         let generation = panel.load_generation;
 
         let status = BrowserCommandState::apply_loaded(
@@ -220,7 +222,7 @@ mod tests {
             vec!["keep.txt", "target.txt"]
         );
         assert_eq!(
-            panel.marked,
+            *panel.marked,
             HashSet::from([PathBuf::from("/next/keep.txt")])
         );
         assert!(panel.error.is_none());

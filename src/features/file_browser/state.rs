@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 use gpui::{ScrollStrategy, UniformListScrollHandle};
 
@@ -10,10 +10,10 @@ pub struct BrowserPanel {
     pub title: &'static str,
     pub path: PathBuf,
     pub selected_index: usize,
-    pub rows: Vec<FileRow>,
+    pub rows: Arc<Vec<FileRow>>,
     pub show_hidden: bool,
     pub show_ignored: bool,
-    pub marked: HashSet<PathBuf>,
+    pub marked: Arc<HashSet<PathBuf>>,
     pub loading: bool,
     pub error: Option<String>,
     pub load_generation: u64,

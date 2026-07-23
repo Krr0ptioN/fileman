@@ -177,10 +177,10 @@ mod tests {
             title: side.label(),
             path: PathBuf::from("/tmp"),
             selected_index: 0,
-            rows: vec![row("alpha", true), row("beta.txt", false)],
+            rows: vec![row("alpha", true), row("beta.txt", false)].into(),
             show_hidden: false,
             show_ignored: false,
-            marked: HashSet::new(),
+            marked: HashSet::new().into(),
             loading: false,
             error: None,
             load_generation: 0,
@@ -285,7 +285,7 @@ mod tests {
     #[test]
     fn new_directory_enters_input_mode_without_rows() {
         let mut primary = panel(PanelSide::Left);
-        primary.rows.clear();
+        std::sync::Arc::make_mut(&mut primary.rows).clear();
         let mut secondary = panel(PanelSide::Right);
         let mut active = PanelSide::Left;
         let mut input_mode = InputMode::Normal;
@@ -314,7 +314,7 @@ mod tests {
     #[test]
     fn toggle_hidden_reloads_empty_panel_and_changes_visibility_mode() {
         let mut primary = panel(PanelSide::Left);
-        primary.rows.clear();
+        std::sync::Arc::make_mut(&mut primary.rows).clear();
         let mut secondary = panel(PanelSide::Right);
         let mut active = PanelSide::Left;
         let mut input_mode = InputMode::Normal;
@@ -342,7 +342,7 @@ mod tests {
     #[test]
     fn toggle_ignored_reloads_empty_panel_and_changes_visibility_mode() {
         let mut primary = panel(PanelSide::Left);
-        primary.rows.clear();
+        std::sync::Arc::make_mut(&mut primary.rows).clear();
         let mut secondary = panel(PanelSide::Right);
         let mut active = PanelSide::Left;
         let mut input_mode = InputMode::Normal;
