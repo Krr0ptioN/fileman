@@ -28,12 +28,6 @@ impl RenderOnce for TitleBar {
                             .child("stiff"),
                     ),
             )
-            .child(
-                div()
-                    .text_color(tokens::TEXT_SECONDARY)
-                    .text_size(px(12.0))
-                    .child("GPUI shell"),
-            )
     }
 }
 

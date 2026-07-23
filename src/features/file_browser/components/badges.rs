@@ -20,17 +20,23 @@ pub(crate) fn executable_badge(is_executable: bool) -> impl IntoElement {
 
 pub(crate) fn intent_badge(intent: RowIntent) -> impl IntoElement {
     let (icon, label, color) = match intent {
-        RowIntent::None => (IconName::StarOff, "", tokens::TEXT_MUTED),
-        RowIntent::Marked => (IconName::Star, "mark", tokens::ACCENT),
-        RowIntent::Copy => (IconName::Copy, "yank", tokens::ICON_COPY),
-        RowIntent::Move => (IconName::Replace, "move", tokens::ICON_MOVE),
-        RowIntent::Delete => (IconName::Delete, "delete", tokens::ICON_DELETE),
+        RowIntent::None => (None, "", tokens::TEXT_MUTED),
+        RowIntent::Marked => (Some(IconName::Star), "mark", tokens::ACCENT),
+        RowIntent::Copy => (Some(IconName::Copy), "yank", tokens::ICON_COPY),
+        RowIntent::Move => (Some(IconName::Replace), "move", tokens::ICON_MOVE),
+        RowIntent::Delete => (Some(IconName::Delete), "delete", tokens::ICON_DELETE),
     };
 
     h_flex()
         .w(px(68.0))
         .items_center()
         .gap_1()
-        .child(Icon::new(icon).size(px(13.0)).text_color(color))
+        .child(match icon {
+            Some(name) => Icon::new(name)
+                .size(px(13.0))
+                .text_color(color)
+                .into_any_element(),
+            None => div().w(px(13.0)).h(px(13.0)).into_any_element(),
+        })
         .child(div().text_size(px(10.0)).text_color(color).child(label))
 }
