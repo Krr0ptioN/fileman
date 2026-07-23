@@ -14,6 +14,7 @@ developed by Zed. The single application binary is `stiff`.
 ### Current Experience
 
 - Single-pane browsing by default, with an optional second browser pane.
+- Independent browser-tab stacks in each pane.
 - Vim-style navigation and file operations, including numeric movement counts.
 - A preview pane opened with `gp`, sharing the window with the active browser.
 - Background preview preloading after selection settles, with a loading skeleton
@@ -37,6 +38,8 @@ developed by Zed. The single application binary is `stiff`.
 | `h` / `l` | Open parent / open selected entry |
 | `s` | Toggle a second browser pane |
 | `w`, `Tab`, `Ctrl+I` | Switch browser pane |
+| `tn` / `tc` | Open / close a browser tab |
+| `tl` / `th` | Switch to next / previous browser tab |
 | `r` / `R` | Reload |
 | `gh` | Toggle dot-hidden entries |
 | `gH` | Toggle gitignored entries |

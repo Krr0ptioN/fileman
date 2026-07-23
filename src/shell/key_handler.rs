@@ -26,6 +26,7 @@ impl AppKeyHandler<Context<'_, StiffShell>> for StiffShell {
         }
 
         if BrowserCommandState::cancel_search(self.active_panel_mut()) {
+            self.active_panel().reveal_selected();
             self.status = "search closed".to_string();
             return true;
         }

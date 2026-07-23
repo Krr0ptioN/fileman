@@ -8,8 +8,8 @@ use gpui::{Context, FocusHandle};
 use crate::features::{
     clipboard::{PasteConflict, PendingPaste},
     file_browser::{
-        BrowserCommand, BrowserPanel, InputMode, PanelSide, PendingConfirm, PreviewCacheEntry,
-        PreviewState,
+        BrowserCommand, BrowserPane, BrowserPanel, BrowserTabId, InputMode, PanelSide,
+        PendingConfirm, PreviewCacheEntry, PreviewState,
     },
     keybind::{HeldNavigation, KeybindRegistry, VimCommandState, file_manager_keybinds},
     layout::LayoutState,
@@ -23,8 +23,8 @@ pub(super) enum ShellPaneFocus {
 }
 
 pub(crate) struct StiffShell {
-    pub(super) primary: BrowserPanel,
-    pub(super) secondary: BrowserPanel,
+    pub(super) primary: BrowserPane,
+    pub(super) secondary: BrowserPane,
     pub(super) active: PanelSide,
     pub(crate) focus_handle: FocusHandle,
     pub(super) vim_command: VimCommandState,
@@ -64,8 +64,12 @@ impl StiffShell {
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| PathBuf::from("."));
         let mut shell = Self {
-            primary: Self::panel_factory(&start_path, "Primary", PanelSide::Left),
-            secondary: Self::panel_factory(&start_path, "Secondary", PanelSide::Right),
+            primary: BrowserPane::new(Self::panel_factory(&start_path, "Primary", PanelSide::Left)),
+            secondary: BrowserPane::new(Self::panel_factory(
+                &start_path,
+                "Secondary",
+                PanelSide::Right,
+            )),
             active: PanelSide::Left,
             focus_handle,
             vim_command: VimCommandState::default(),
@@ -119,23 +123,41 @@ impl StiffShell {
 
     pub(super) fn active_panel(&self) -> &BrowserPanel {
         match self.active {
-            PanelSide::Left => &self.primary,
-            PanelSide::Right => &self.secondary,
+            PanelSide::Left => self.primary.active(),
+            PanelSide::Right => self.secondary.active(),
         }
     }
 
     pub(super) fn active_panel_mut(&mut self) -> &mut BrowserPanel {
         match self.active {
-            PanelSide::Left => &mut self.primary,
-            PanelSide::Right => &mut self.secondary,
+            PanelSide::Left => self.primary.active_mut(),
+            PanelSide::Right => self.secondary.active_mut(),
         }
     }
 
     pub(super) fn panel_mut(&mut self, side: PanelSide) -> &mut BrowserPanel {
         match side {
+            PanelSide::Left => self.primary.active_mut(),
+            PanelSide::Right => self.secondary.active_mut(),
+        }
+    }
+
+    pub(super) fn pane(&self, side: PanelSide) -> &BrowserPane {
+        match side {
+            PanelSide::Left => &self.primary,
+            PanelSide::Right => &self.secondary,
+        }
+    }
+
+    pub(super) fn pane_mut(&mut self, side: PanelSide) -> &mut BrowserPane {
+        match side {
             PanelSide::Left => &mut self.primary,
             PanelSide::Right => &mut self.secondary,
         }
+    }
+
+    pub(super) fn active_tab_id(&self, side: PanelSide) -> BrowserTabId {
+        self.pane(side).active_id()
     }
 
     pub(super) fn command_mode_label(&self, cx: &Context<Self>) -> String {

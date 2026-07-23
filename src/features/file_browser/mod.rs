@@ -12,6 +12,7 @@ pub mod rows;
 pub mod search;
 pub mod selection;
 pub mod state;
+pub mod tabs;
 pub mod tokens;
 
 pub use actions::{
@@ -45,3 +46,4 @@ pub use state::{
     BrowserListingSnapshot, BrowserPanel, FileTarget, FilenameSearchSession, InputMode, PanelSide,
     PendingConfirm,
 };
+pub use tabs::{BrowserPane, BrowserTabAction, BrowserTabId};

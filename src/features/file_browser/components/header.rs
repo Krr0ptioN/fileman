@@ -10,18 +10,20 @@ use crate::features::{
 pub(crate) struct PanelHeader {
     panel: BrowserPanel,
     active: bool,
+    tab_position: (usize, usize),
 }
 
 impl PanelHeader {
-    pub(crate) fn new(panel: &BrowserPanel, active: bool) -> Self {
+    pub(crate) fn new(panel: &BrowserPanel, active: bool, tab_position: (usize, usize)) -> Self {
         Self {
             panel: panel.clone(),
             active,
+            tab_position,
         }
     }
 
     fn status(&self) -> String {
-        match (self.panel.loading, self.panel.error.as_ref()) {
+        let panel_status = match (self.panel.loading, self.panel.error.as_ref()) {
             (true, _) => "loading".to_string(),
             (_, Some(error)) => error.clone(),
             _ if self.panel.show_hidden && self.panel.show_ignored => {
@@ -30,7 +32,11 @@ impl PanelHeader {
             _ if self.panel.show_hidden => format!("{} rows | hidden", self.panel.rows.len()),
             _ if self.panel.show_ignored => format!("{} rows | ignored", self.panel.rows.len()),
             _ => format!("{} rows", self.panel.rows.len()),
-        }
+        };
+        format!(
+            "tab {}/{} | {panel_status}",
+            self.tab_position.0, self.tab_position.1
+        )
     }
 
     fn location(&self) -> String {

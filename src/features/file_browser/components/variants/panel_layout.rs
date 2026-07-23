@@ -14,6 +14,8 @@ use crate::features::{
 pub struct PanelLayout {
     primary: BrowserPanel,
     secondary: BrowserPanel,
+    primary_tabs: (usize, usize),
+    secondary_tabs: (usize, usize),
     active: PanelSide,
     pending_confirm: Option<PendingConfirm>,
 }
@@ -22,12 +24,16 @@ impl PanelLayout {
     pub fn new(
         primary: &BrowserPanel,
         secondary: &BrowserPanel,
+        primary_tabs: (usize, usize),
+        secondary_tabs: (usize, usize),
         active: PanelSide,
         pending_confirm: Option<&PendingConfirm>,
     ) -> Self {
         Self {
             primary: primary.clone(),
             secondary: secondary.clone(),
+            primary_tabs,
+            secondary_tabs,
             active,
             pending_confirm: pending_confirm.cloned(),
         }
@@ -35,10 +41,18 @@ impl PanelLayout {
 
     fn single_panel(&self) -> FilePanel {
         match self.active {
-            PanelSide::Left => FilePanel::new(&self.primary, true, self.pending_confirm.as_ref()),
-            PanelSide::Right => {
-                FilePanel::new(&self.secondary, true, self.pending_confirm.as_ref())
-            }
+            PanelSide::Left => FilePanel::new(
+                &self.primary,
+                true,
+                self.primary_tabs,
+                self.pending_confirm.as_ref(),
+            ),
+            PanelSide::Right => FilePanel::new(
+                &self.secondary,
+                true,
+                self.secondary_tabs,
+                self.pending_confirm.as_ref(),
+            ),
         }
     }
 }
@@ -62,11 +76,13 @@ impl RenderOnce for PanelLayout {
                 .child(FilePanel::new(
                     &self.primary,
                     self.active == PanelSide::Left,
+                    self.primary_tabs,
                     self.pending_confirm.as_ref(),
                 ))
                 .child(FilePanel::new(
                     &self.secondary,
                     self.active == PanelSide::Right,
+                    self.secondary_tabs,
                     self.pending_confirm.as_ref(),
                 ))
                 .into_any_element(),
@@ -78,11 +94,13 @@ impl RenderOnce for PanelLayout {
                 .child(FilePanel::new(
                     &self.primary,
                     self.active == PanelSide::Left,
+                    self.primary_tabs,
                     self.pending_confirm.as_ref(),
                 ))
                 .child(FilePanel::new(
                     &self.secondary,
                     self.active == PanelSide::Right,
+                    self.secondary_tabs,
                     self.pending_confirm.as_ref(),
                 ))
                 .into_any_element(),

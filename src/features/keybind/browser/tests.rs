@@ -47,6 +47,10 @@ fn maps_selection_and_general_commands() {
     assert_eq!(command("gH", 1, false), Some(BrowserCommand::ToggleIgnored));
     assert_eq!(command("w", 1, false), Some(BrowserCommand::SwitchPanel));
     assert_eq!(command("r", 1, false), Some(BrowserCommand::Reload));
+    assert_eq!(command("tn", 1, false), Some(BrowserCommand::NewTab));
+    assert_eq!(command("tl", 1, false), Some(BrowserCommand::NextTab));
+    assert_eq!(command("th", 1, false), Some(BrowserCommand::PreviousTab));
+    assert_eq!(command("tc", 1, false), Some(BrowserCommand::CloseTab));
 }
 
 #[test]

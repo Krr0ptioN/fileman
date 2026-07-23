@@ -17,6 +17,7 @@ use crate::features::{
 pub struct FilePanel {
     panel: BrowserPanel,
     active: bool,
+    tab_position: (usize, usize),
     pending_confirm: Option<PendingConfirm>,
 }
 
@@ -24,11 +25,13 @@ impl FilePanel {
     pub fn new(
         panel: &BrowserPanel,
         active: bool,
+        tab_position: (usize, usize),
         pending_confirm: Option<&PendingConfirm>,
     ) -> Self {
         Self {
             panel: panel.clone(),
             active,
+            tab_position,
             pending_confirm: pending_confirm.cloned(),
         }
     }
@@ -60,7 +63,11 @@ impl RenderOnce for FilePanel {
             })
             .rounded(px(6.0))
             .overflow_hidden()
-            .child(PanelHeader::new(&self.panel, self.active))
+            .child(PanelHeader::new(
+                &self.panel,
+                self.active,
+                self.tab_position,
+            ))
             .child(
                 div().flex_grow().min_h(px(0.0)).p_1().child(
                     uniform_list(list_id, row_count, move |range, _, _| {

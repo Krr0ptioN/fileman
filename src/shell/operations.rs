@@ -34,6 +34,7 @@ impl StiffShell {
         cx: &mut Context<Self>,
     ) {
         self.flush_preview_memory();
+        let tab = self.active_tab_id(side);
         let (generation, show_hidden, show_ignored) = {
             let panel = self.panel_mut(side);
             (
@@ -61,7 +62,7 @@ impl StiffShell {
 
             cx.update(|cx| {
                 let _ = shell.update(cx, |shell, cx| {
-                    shell.apply_loaded_panel(side, path, prefer_name, generation, result);
+                    shell.apply_loaded_panel(side, tab, path, prefer_name, generation, result);
                     shell.schedule_preview_preload(cx);
                     cx.notify();
                 });
@@ -88,6 +89,7 @@ impl StiffShell {
         cx: &mut Context<Self>,
     ) {
         self.flush_preview_memory();
+        let tab = self.active_tab_id(side);
         let (generation, cancel, policy) = {
             let panel = self.panel_mut(side);
             let policy = VisibilityPolicy {
@@ -113,12 +115,14 @@ impl StiffShell {
 
             cx.update(|cx| {
                 let _ = shell.update(cx, |shell, cx| {
-                    let panel = shell.panel_mut(side);
-                    if let Some(status) =
+                    let status = shell.pane_mut(side).panel_mut(tab).and_then(|panel| {
                         BrowserCommandState::apply_search_results(panel, generation, result)
-                    {
+                    });
+                    if let Some(status) = status {
                         shell.status = status;
-                        shell.panel_mut(side).reveal_selected();
+                        if shell.active_tab_id(side) == tab {
+                            shell.panel_mut(side).reveal_selected();
+                        }
                         cx.notify();
                     }
                 });
@@ -128,8 +132,8 @@ impl StiffShell {
     }
 
     fn reload_panels_after_operation(&mut self, cx: &mut Context<Self>) {
-        let left = self.primary.path.clone();
-        let right = self.secondary.path.clone();
+        let left = self.primary.active().path.clone();
+        let right = self.secondary.active().path.clone();
         self.load_panel(PanelSide::Left, left, None, cx);
         self.load_panel(PanelSide::Right, right, None, cx);
     }
@@ -696,17 +700,20 @@ impl StiffShell {
     fn apply_loaded_panel(
         &mut self,
         side: PanelSide,
+        tab: crate::features::file_browser::BrowserTabId,
         path: PathBuf,
         prefer_name: Option<String>,
         generation: u64,
         result: anyhow::Result<Vec<core::DirEntry>>,
     ) {
-        let panel = self.panel_mut(side);
-        if let Some(status) =
+        let status = self.pane_mut(side).panel_mut(tab).and_then(|panel| {
             BrowserCommandState::apply_loaded(panel, path, prefer_name, generation, result)
-        {
+        });
+        if let Some(status) = status {
             self.status = status;
-            self.panel_mut(side).reveal_selected();
+            if self.active_tab_id(side) == tab {
+                self.panel_mut(side).reveal_selected();
+            }
         }
     }
 }

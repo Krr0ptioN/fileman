@@ -7,12 +7,45 @@ use crate::features::{
     },
     file_browser::{
         BrowserCommand, BrowserCommandEffect, BrowserCommandOutcome, BrowserCommandState,
-        FileOperation, PanelSide, execute_browser_command,
+        BrowserTabAction, FileOperation, PanelSide, execute_browser_command,
     },
     layout::{LayoutState, PaneMode},
 };
 
 impl StiffShell {
+    fn apply_tab_action(&mut self, action: BrowserTabAction, cx: &mut Context<Self>) {
+        let side = self.active;
+        let changed = {
+            let pane = self.pane_mut(side);
+            match action {
+                BrowserTabAction::Open => {
+                    pane.open_tab();
+                    true
+                }
+                BrowserTabAction::Next => {
+                    pane.select_next();
+                    true
+                }
+                BrowserTabAction::Previous => {
+                    pane.select_previous();
+                    true
+                }
+                BrowserTabAction::Close => pane.close_active(),
+            }
+        };
+
+        self.pending_confirm = None;
+        self.hide_preview_pane();
+        let pane = self.pane(side);
+        self.status = match changed {
+            true => format!("tab {}/{}", pane.active_number(), pane.tab_count()),
+            false => "cannot close last tab".to_string(),
+        };
+        self.ensure_panel_loaded(side, cx);
+        self.active_panel().reveal_selected();
+        self.schedule_preview_preload(cx);
+    }
+
     pub(super) fn execute_browser_command(
         &mut self,
         command: BrowserCommand,
@@ -21,8 +54,8 @@ impl StiffShell {
     ) -> bool {
         let outcome = {
             let mut state = BrowserCommandState {
-                primary: &mut self.primary,
-                secondary: &mut self.secondary,
+                primary: self.primary.active_mut(),
+                secondary: self.secondary.active_mut(),
                 active: &mut self.active,
                 input_mode: &mut self.input_mode,
                 pending_confirm: &mut self.pending_confirm,
@@ -65,6 +98,7 @@ impl StiffShell {
             BrowserCommandEffect::SearchActive { root, query } => {
                 self.search_panel(self.active, root, query, cx);
             }
+            BrowserCommandEffect::Tab(action) => self.apply_tab_action(action, cx),
             BrowserCommandEffect::OpenWithSystem(path) => cx.open_with_system(&path),
             BrowserCommandEffect::Clipboard(effect) => self.apply_clipboard_effect(effect, cx),
             BrowserCommandEffect::RunOperation(operation) => self.run_operation(operation, cx),

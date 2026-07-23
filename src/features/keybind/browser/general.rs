@@ -32,4 +32,16 @@ pub(super) fn register(registry: &mut Registry) {
     super::bind(registry, "R", "reload", "General", false, |_| {
         BrowserCommand::Reload
     });
+    super::bind(registry, "tn", "new tab", "Tabs", true, |_| {
+        BrowserCommand::NewTab
+    });
+    super::bind(registry, "tl", "next tab", "Tabs", true, |_| {
+        BrowserCommand::NextTab
+    });
+    super::bind(registry, "th", "previous tab", "Tabs", true, |_| {
+        BrowserCommand::PreviousTab
+    });
+    super::bind(registry, "tc", "close tab", "Tabs", true, |_| {
+        BrowserCommand::CloseTab
+    });
 }

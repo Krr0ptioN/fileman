@@ -1,4 +1,5 @@
 use crate::features::clipboard::{ClipboardEffect, ClipboardKind};
+use crate::features::file_browser::BrowserTabAction;
 
 use super::{
     effect::{BrowserCommandEffect, BrowserCommandOutcome},
@@ -60,6 +61,14 @@ fn execute_ready_command(
             true => BrowserCommandOutcome::status("search closed").reveal_active(),
             false => BrowserCommandOutcome::status("normal"),
         },
+        NewTab => BrowserCommandOutcome::effect(BrowserCommandEffect::Tab(BrowserTabAction::Open)),
+        NextTab => BrowserCommandOutcome::effect(BrowserCommandEffect::Tab(BrowserTabAction::Next)),
+        PreviousTab => {
+            BrowserCommandOutcome::effect(BrowserCommandEffect::Tab(BrowserTabAction::Previous))
+        }
+        CloseTab => {
+            BrowserCommandOutcome::effect(BrowserCommandEffect::Tab(BrowserTabAction::Close))
+        }
         ToggleMark(count) => {
             let marked = toggle_marked(state.active_panel_mut(), count);
             BrowserCommandOutcome::status(format!("{marked} marked")).reveal_active()
@@ -318,6 +327,37 @@ mod tests {
                 if root == &PathBuf::from("/tmp") && input.is_empty()
         ));
         assert!(matches!(outcome.effect, BrowserCommandEffect::None));
+    }
+
+    #[test]
+    fn tab_commands_return_framework_neutral_tab_effects() {
+        let mut primary = panel(PanelSide::Left);
+        primary.clear_rows();
+        let mut secondary = panel(PanelSide::Right);
+        let mut active = PanelSide::Left;
+        let mut input_mode = InputMode::Normal;
+        let mut pending_confirm = None;
+
+        for (command, action) in [
+            (BrowserCommand::NewTab, BrowserTabAction::Open),
+            (BrowserCommand::NextTab, BrowserTabAction::Next),
+            (BrowserCommand::PreviousTab, BrowserTabAction::Previous),
+            (BrowserCommand::CloseTab, BrowserTabAction::Close),
+        ] {
+            let outcome = with_state(
+                &mut primary,
+                &mut secondary,
+                &mut active,
+                &mut input_mode,
+                &mut pending_confirm,
+                command,
+                "tab",
+            );
+            assert!(matches!(
+                outcome.effect,
+                BrowserCommandEffect::Tab(actual) if actual == action
+            ));
+        }
     }
 
     #[test]

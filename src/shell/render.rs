@@ -26,6 +26,10 @@ impl Render for StiffShell {
                         .child(FilePanel::new(
                             self.active_panel(),
                             browser_active,
+                            (
+                                self.pane(self.active).active_number(),
+                                self.pane(self.active).tab_count(),
+                            ),
                             self.pending_confirm.as_ref(),
                         ))
                         .child(PreviewPanel::new(preview, preview_active))
@@ -38,6 +42,10 @@ impl Render for StiffShell {
                         .child(FilePanel::new(
                             self.active_panel(),
                             browser_active,
+                            (
+                                self.pane(self.active).active_number(),
+                                self.pane(self.active).tab_count(),
+                            ),
                             self.pending_confirm.as_ref(),
                         ))
                         .child(PreviewPanel::new(preview, preview_active))
@@ -45,8 +53,10 @@ impl Render for StiffShell {
                 }
             }
             None => PanelLayout::new(
-                &self.primary,
-                &self.secondary,
+                self.primary.active(),
+                self.secondary.active(),
+                (self.primary.active_number(), self.primary.tab_count()),
+                (self.secondary.active_number(), self.secondary.tab_count()),
                 self.active,
                 self.pending_confirm.as_ref(),
             )

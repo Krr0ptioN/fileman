@@ -9,6 +9,10 @@ pub enum BrowserCommand {
     OpenSelected,
     FilenameSearch,
     CancelSearch,
+    NewTab,
+    NextTab,
+    PreviousTab,
+    CloseTab,
     ToggleMark(usize),
     ToggleAllMarks,
     ClearMarks,
@@ -45,6 +49,10 @@ impl BrowserCommand {
                 | Self::CancelTask
                 | Self::FilenameSearch
                 | Self::CancelSearch
+                | Self::NewTab
+                | Self::NextTab
+                | Self::PreviousTab
+                | Self::CloseTab
         )
     }
 
