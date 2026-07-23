@@ -1192,10 +1192,20 @@ fn decode_jpeg_dc_only(bytes: &[u8], max_side: u32) -> Option<(DecodedImage, Ima
     let mcu_w = w.div_ceil(h_max * 8);
     let mcu_h = h.div_ceil(v_max * 8);
     // Allocate DC coefficient planes for each component
-    let mut dc_planes: Vec<Vec<f32>> = components
-        .iter()
-        .map(|c| vec![0.0f32; mcu_w * c.h_samp * mcu_h * c.v_samp])
-        .collect();
+    const MAX_DC_BLOCKS: usize = 16 * 1024 * 1024;
+    let mut total_blocks = 0usize;
+    let mut dc_planes = Vec::with_capacity(components.len());
+    for component in &components {
+        let blocks = mcu_w
+            .checked_mul(component.h_samp)?
+            .checked_mul(mcu_h)?
+            .checked_mul(component.v_samp)?;
+        total_blocks = total_blocks.checked_add(blocks)?;
+        if total_blocks > MAX_DC_BLOCKS {
+            return None;
+        }
+        dc_planes.push(vec![0.0f32; blocks]);
+    }
 
     let mut reader = BitReader::new(bytes, entropy_start);
     let mut dc_pred = [0i32; 4];
@@ -1221,6 +1231,9 @@ fn decode_jpeg_dc_only(bytes: &[u8], max_side: u32) -> Option<(DecodedImage, Ima
                     for hx in 0..comp.h_samp {
                         // Decode DC coefficient
                         let cat = reader.decode_huff(dc_lut)?;
+                        if cat > 11 {
+                            return None;
+                        }
                         let dc_diff = if cat == 0 {
                             0
                         } else {
@@ -1272,7 +1285,8 @@ fn decode_jpeg_dc_only(bytes: &[u8], max_side: u32) -> Option<(DecodedImage, Ima
     let out_h = mcu_h * v_max;
     let nc = components.len();
 
-    let mut rgba = vec![0u8; out_w * out_h * 4];
+    let output_len = out_w.checked_mul(out_h)?.checked_mul(4)?;
+    let mut rgba = vec![0u8; output_len];
 
     for y in 0..out_h {
         for x in 0..out_w {
