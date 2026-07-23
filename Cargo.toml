@@ -7,7 +7,7 @@ categories = ["filesystem"]
 license = "MIT"
 repository = "https://github.com/krr0ption/stiff"
 authors = ["Mardin Nasouti"]
-edition = "2026"
+edition = "2024"
 default-run = "stiff"
 exclude = [
     "etc/snapshots/",
