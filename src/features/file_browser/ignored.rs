@@ -4,6 +4,26 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 
 use crate::core::DirEntry;
 
+pub fn read_visible_fs_directory(
+    directory: &Path,
+    show_hidden: bool,
+    show_ignored: bool,
+) -> anyhow::Result<Vec<DirEntry>> {
+    let matcher = match show_ignored {
+        true => None,
+        false => matcher_for_directory(directory),
+    };
+    crate::core::read_fs_directory_filtered(directory, |name, is_dir| {
+        let visible = show_hidden || !name.as_encoded_bytes().starts_with(b".");
+        visible
+            && !matcher.as_ref().is_some_and(|matcher| {
+                matcher
+                    .matched_path_or_any_parents(directory.join(name), is_dir)
+                    .is_ignore()
+            })
+    })
+}
+
 pub fn hide_gitignored_entries(directory: &Path, entries: Vec<DirEntry>) -> Vec<DirEntry> {
     let Some(matcher) = matcher_for_directory(directory) else {
         return entries;

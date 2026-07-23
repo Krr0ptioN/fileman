@@ -98,5 +98,7 @@ fn has_extension(path: &Path, extensions: &[&str]) -> bool {
     let Some(extension) = path.extension().and_then(|ext| ext.to_str()) else {
         return false;
     };
-    extensions.contains(&extension.to_ascii_lowercase().as_str())
+    extensions
+        .iter()
+        .any(|candidate| extension.eq_ignore_ascii_case(candidate))
 }

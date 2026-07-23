@@ -25,7 +25,7 @@ pub use command::{
 pub use components::{
     CommandBar, FilePanel, HelpPopup, LayoutVariant, LeaderMap, PanelLayout, PreviewPanel, TitleBar,
 };
-pub use ignored::{hide_gitignored_entries, path_is_gitignored};
+pub use ignored::{hide_gitignored_entries, path_is_gitignored, read_visible_fs_directory};
 pub use mode_action::{ConfirmModeAction, RenameModeAction};
 pub use mode_executor::{apply_confirm_action, apply_rename_action};
 pub use navigation::{PanelNavigation, parent_navigation, selected_navigation};

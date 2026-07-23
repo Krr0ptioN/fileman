@@ -7,8 +7,8 @@ use crate::{
     core,
     features::file_browser::{
         BrowserCommandState, FileOperation, FileTarget, PanelSide, PreviewBody, PreviewCacheEntry,
-        PreviewPreloadDecision, PreviewRequest, PreviewState, hide_gitignored_entries,
-        load_local_preview, preview_preload_decision,
+        PreviewPreloadDecision, PreviewRequest, PreviewState, load_local_preview,
+        preview_preload_decision, read_visible_fs_directory,
     },
 };
 
@@ -33,10 +33,11 @@ impl StiffShell {
         cx: &mut Context<Self>,
     ) {
         self.flush_preview_memory();
-        let (generation, show_ignored) = {
+        let (generation, show_hidden, show_ignored) = {
             let panel = self.panel_mut(side);
             (
                 BrowserCommandState::start_loading(panel, path.clone()),
+                panel.show_hidden,
                 panel.show_ignored,
             )
         };
@@ -46,12 +47,9 @@ impl StiffShell {
             let load_path = path.clone();
             let result = cx
                 .background_executor()
-                .spawn(async move {
-                    core::read_fs_directory(&load_path).map(|entries| match show_ignored {
-                        true => entries,
-                        false => hide_gitignored_entries(&load_path, entries),
-                    })
-                })
+                .spawn(
+                    async move { read_visible_fs_directory(&load_path, show_hidden, show_ignored) },
+                )
                 .await;
 
             cx.update(|cx| {

@@ -1,30 +1,53 @@
-use std::{fs, io, path, time::UNIX_EPOCH};
+use std::{ffi::OsStr, fs, io, path, time::UNIX_EPOCH};
 
 use crate::core::{DirEntry, EntryLocation};
 
 pub fn read_fs_directory(path: &path::Path) -> anyhow::Result<Vec<DirEntry>> {
+    read_fs_directory_filtered(path, |_, _| true)
+}
+
+pub fn read_fs_directory_filtered(
+    path: &path::Path,
+    mut include: impl FnMut(&OsStr, bool) -> bool,
+) -> anyhow::Result<Vec<DirEntry>> {
     let mut dir_entries = Vec::new();
 
     for entry in fs::read_dir(path)? {
-        dir_entries.push(dir_entry(entry?)?);
+        let entry = entry?;
+        let file_name = entry.file_name();
+        let file_type = entry.file_type()?;
+        let is_symlink = file_type.is_symlink();
+        let metadata = match is_symlink {
+            true => fs::metadata(entry.path()).ok(),
+            false => None,
+        };
+        let is_dir = match is_symlink {
+            true => metadata.as_ref().is_some_and(fs::Metadata::is_dir),
+            false => file_type.is_dir(),
+        };
+        if include(&file_name, is_dir) {
+            dir_entries.push(dir_entry(entry, file_name, is_symlink, is_dir, metadata)?);
+        }
     }
 
     dir_entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
     Ok(dir_entries)
 }
 
-fn dir_entry(entry: fs::DirEntry) -> io::Result<DirEntry> {
-    let file_name = entry.file_name().to_string_lossy().to_string();
-    let file_type = entry.file_type()?;
-    let is_symlink = file_type.is_symlink();
-    let metadata = metadata_for(&entry, is_symlink);
-    let is_dir = match is_symlink {
-        true => metadata.as_ref().map(|m| m.is_dir()).unwrap_or(false),
-        false => file_type.is_dir(),
+fn dir_entry(
+    entry: fs::DirEntry,
+    file_name: std::ffi::OsString,
+    is_symlink: bool,
+    is_dir: bool,
+    metadata: Option<fs::Metadata>,
+) -> io::Result<DirEntry> {
+    let metadata = match metadata {
+        Some(metadata) => Some(metadata),
+        None => entry.metadata().ok(),
     };
 
     Ok(DirEntry {
-        name: file_name,
+        name: file_name.to_string_lossy().into_owned(),
         is_dir,
         is_symlink,
         is_executable: is_executable(metadata.as_ref()),
@@ -33,13 +56,6 @@ fn dir_entry(entry: fs::DirEntry) -> io::Result<DirEntry> {
         size: metadata.as_ref().filter(|_| !is_dir).map(|m| m.len()),
         modified: metadata.as_ref().and_then(modified_secs),
     })
-}
-
-fn metadata_for(entry: &fs::DirEntry, is_symlink: bool) -> Option<fs::Metadata> {
-    match is_symlink {
-        true => fs::metadata(entry.path()).ok(),
-        false => entry.metadata().ok(),
-    }
 }
 
 fn is_executable(metadata: Option<&fs::Metadata>) -> bool {
