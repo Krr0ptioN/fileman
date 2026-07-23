@@ -1,11 +1,4 @@
-use crate::features::{
-    clipboard::{ClipboardEffect, ClipboardKind},
-    file_browser::{
-        BrowserTabAction, effective_targets, parent_navigation, prepare_delete,
-        selected_navigation, selected_target, start_filename_search, start_new_directory,
-        start_rename, toggle_all_marks, toggle_marked,
-    },
-};
+use crate::features::{clipboard, file_browser};
 
 use super::{
     effect::{BrowserCommandEffect, BrowserCommandOutcome},
@@ -52,62 +45,78 @@ fn execute_ready_command(
             state.active_panel_mut().select_line(line);
             BrowserCommandOutcome::effect(BrowserCommandEffect::None)
         }
-        OpenParent => parent_navigation(state.active_panel()).into_outcome(),
-        OpenSelected => selected_navigation(state.active_panel()).into_outcome(),
-        FilenameSearch(scope) => BrowserCommandOutcome::status(start_filename_search(
-            state.input_mode,
-            state.active_panel().path.clone(),
-            scope,
-        )),
+        OpenParent => file_browser::parent_navigation(state.active_panel()).into_outcome(),
+        OpenSelected => file_browser::selected_navigation(state.active_panel()).into_outcome(),
+        FilenameSearch(scope) => {
+            BrowserCommandOutcome::status(file_browser::start_filename_search(
+                state.input_mode,
+                state.active_panel().path.clone(),
+                scope,
+            ))
+        }
         CancelSearch => match BrowserCommandState::cancel_search(state.active_panel_mut()) {
             true => BrowserCommandOutcome::status("search closed").reveal_active(),
             false => BrowserCommandOutcome::status("normal"),
         },
-        NewTab => BrowserCommandOutcome::effect(BrowserCommandEffect::Tab(BrowserTabAction::Open)),
-        NextTab => BrowserCommandOutcome::effect(BrowserCommandEffect::Tab(BrowserTabAction::Next)),
-        PreviousTab => {
-            BrowserCommandOutcome::effect(BrowserCommandEffect::Tab(BrowserTabAction::Previous))
-        }
-        CloseTab => {
-            BrowserCommandOutcome::effect(BrowserCommandEffect::Tab(BrowserTabAction::Close))
-        }
+        NewTab => BrowserCommandOutcome::effect(BrowserCommandEffect::Tab(
+            file_browser::BrowserTabAction::Open,
+        )),
+        NextTab => BrowserCommandOutcome::effect(BrowserCommandEffect::Tab(
+            file_browser::BrowserTabAction::Next,
+        )),
+        PreviousTab => BrowserCommandOutcome::effect(BrowserCommandEffect::Tab(
+            file_browser::BrowserTabAction::Previous,
+        )),
+        CloseTab => BrowserCommandOutcome::effect(BrowserCommandEffect::Tab(
+            file_browser::BrowserTabAction::Close,
+        )),
         ToggleMark(count) => {
-            let marked = toggle_marked(state.active_panel_mut(), count);
+            let marked = file_browser::toggle_marked(state.active_panel_mut(), count);
             BrowserCommandOutcome::status(format!("{marked} marked")).reveal_active()
         }
-        ToggleAllMarks => BrowserCommandOutcome::status(toggle_all_marks(state.active_panel_mut())),
+        ToggleAllMarks => {
+            BrowserCommandOutcome::status(file_browser::toggle_all_marks(state.active_panel_mut()))
+        }
         ClearMarks => {
             state.clear_marks();
             BrowserCommandOutcome::status("marks cleared")
         }
-        Copy => clipboard_outcome(state, ClipboardKind::Copy),
-        MoveSelection => clipboard_outcome(state, ClipboardKind::Move),
+        Copy => clipboard_outcome(state, clipboard::ClipboardKind::Copy),
+        MoveSelection => clipboard_outcome(state, clipboard::ClipboardKind::Move),
         CopyPath => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
-            ClipboardEffect::CopyPath(selected_target(state.active_panel())),
+            clipboard::ClipboardEffect::CopyPath(file_browser::selected_target(
+                state.active_panel(),
+            )),
         )),
         CopyName => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
-            ClipboardEffect::CopyName(selected_target(state.active_panel())),
+            clipboard::ClipboardEffect::CopyName(file_browser::selected_target(
+                state.active_panel(),
+            )),
         )),
         CopyFileContents => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
-            ClipboardEffect::CopyFileContents(selected_target(state.active_panel())),
+            clipboard::ClipboardEffect::CopyFileContents(file_browser::selected_target(
+                state.active_panel(),
+            )),
         )),
         CopyFiles => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
-            ClipboardEffect::CopyFiles(effective_targets(state.active_panel())),
+            clipboard::ClipboardEffect::CopyFiles(file_browser::effective_targets(
+                state.active_panel(),
+            )),
         )),
         Paste => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
-            ClipboardEffect::PasteInto(state.active_panel().path.clone()),
+            clipboard::ClipboardEffect::PasteInto(state.active_panel().path.clone()),
         )),
         CancelTask => BrowserCommandOutcome::effect(BrowserCommandEffect::CancelActiveTask),
         Delete => {
-            let targets = effective_targets(state.active_panel());
-            let status = prepare_delete(state.pending_confirm, targets);
+            let targets = file_browser::effective_targets(state.active_panel());
+            let status = file_browser::prepare_delete(state.pending_confirm, targets);
             BrowserCommandOutcome::status(status)
         }
         Rename => {
-            let target = selected_target(state.active_panel());
-            BrowserCommandOutcome::status(start_rename(state.input_mode, target))
+            let target = file_browser::selected_target(state.active_panel());
+            BrowserCommandOutcome::status(file_browser::start_rename(state.input_mode, target))
         }
-        NewDirectory => BrowserCommandOutcome::status(start_new_directory(
+        NewDirectory => BrowserCommandOutcome::status(file_browser::start_new_directory(
             state.input_mode,
             state.active_panel().path.clone(),
         )),
@@ -151,16 +160,18 @@ fn execute_ready_command(
 
 fn clipboard_outcome(
     state: &BrowserCommandState<'_>,
-    kind: ClipboardKind,
+    kind: clipboard::ClipboardKind,
 ) -> BrowserCommandOutcome {
-    BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(ClipboardEffect::Prepare {
-        kind,
-        targets: effective_targets(state.active_panel()),
-    }))
+    BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
+        clipboard::ClipboardEffect::Prepare {
+            kind,
+            targets: file_browser::effective_targets(state.active_panel()),
+        },
+    ))
 }
 
 fn preview_outcome(state: &BrowserCommandState<'_>) -> BrowserCommandOutcome {
-    match selected_target(state.active_panel()) {
+    match file_browser::selected_target(state.active_panel()) {
         Some(target) => BrowserCommandOutcome::effect(BrowserCommandEffect::Preview(target)),
         None => BrowserCommandOutcome::status("nothing selected"),
     }
@@ -344,10 +355,19 @@ mod tests {
         let mut pending_confirm = None;
 
         for (command, action) in [
-            (BrowserCommand::NewTab, BrowserTabAction::Open),
-            (BrowserCommand::NextTab, BrowserTabAction::Next),
-            (BrowserCommand::PreviousTab, BrowserTabAction::Previous),
-            (BrowserCommand::CloseTab, BrowserTabAction::Close),
+            (BrowserCommand::NewTab, file_browser::BrowserTabAction::Open),
+            (
+                BrowserCommand::NextTab,
+                file_browser::BrowserTabAction::Next,
+            ),
+            (
+                BrowserCommand::PreviousTab,
+                file_browser::BrowserTabAction::Previous,
+            ),
+            (
+                BrowserCommand::CloseTab,
+                file_browser::BrowserTabAction::Close,
+            ),
         ] {
             let outcome = with_state(
                 &mut primary,
