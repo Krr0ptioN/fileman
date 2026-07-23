@@ -1,10 +1,22 @@
-use std::{fs, io, path::Path};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
 
 pub fn copy_recursively(src: &Path, dst_dir: &Path) -> io::Result<()> {
-    match src.is_dir() {
-        true => copy_dir(src, dst_dir),
-        false => copy_file(src, dst_dir),
+    let src_canonical = fs::canonicalize(src)?;
+    let dst_canonical = fs::canonicalize(dst_dir)?;
+    if dst_canonical.starts_with(&src_canonical) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "copy destination {} is inside source {}",
+                dst_dir.display(),
+                src.display()
+            ),
+        ));
     }
+    copy_entry(src, dst_dir)
 }
 
 pub fn delete_path(path: &Path, is_dir: bool) -> io::Result<()> {
@@ -15,26 +27,141 @@ pub fn delete_path(path: &Path, is_dir: bool) -> io::Result<()> {
 }
 
 fn copy_dir(src: &Path, dst_dir: &Path) -> io::Result<()> {
-    let dest = dst_dir.join(src.file_name().unwrap());
+    let dest = destination_path(src, dst_dir)?;
     fs::create_dir_all(&dest)?;
     for entry in fs::read_dir(src)? {
         let entry = entry?;
         let path = entry.path();
-        match path.is_dir() {
-            true => copy_recursively(&path, &dest)?,
-            false => {
-                fs::copy(&path, dest.join(entry.file_name()))?;
-            }
-        }
+        copy_entry(&path, &dest)?;
     }
     Ok(())
 }
 
 fn copy_file(src: &Path, dst_dir: &Path) -> io::Result<()> {
-    let dest = dst_dir.join(src.file_name().unwrap());
+    let dest = destination_path(src, dst_dir)?;
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent)?;
     }
     fs::copy(src, dest)?;
     Ok(())
+}
+
+fn copy_entry(src: &Path, dst_dir: &Path) -> io::Result<()> {
+    let file_type = fs::symlink_metadata(src)?.file_type();
+    if file_type.is_symlink() {
+        copy_symlink(src, dst_dir)
+    } else if file_type.is_dir() {
+        copy_dir(src, dst_dir)
+    } else {
+        copy_file(src, dst_dir)
+    }
+}
+
+fn destination_path(src: &Path, dst_dir: &Path) -> io::Result<PathBuf> {
+    let file_name = src.file_name().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("source path {} has no file name", src.display()),
+        )
+    })?;
+    Ok(dst_dir.join(file_name))
+}
+
+#[cfg(unix)]
+fn copy_symlink(src: &Path, dst_dir: &Path) -> io::Result<()> {
+    use std::os::unix::fs::symlink;
+
+    let dest = destination_path(src, dst_dir)?;
+    symlink(fs::read_link(src)?, dest)
+}
+
+#[cfg(windows)]
+fn copy_symlink(src: &Path, dst_dir: &Path) -> io::Result<()> {
+    use std::os::windows::fs::{symlink_dir, symlink_file};
+
+    let target = fs::read_link(src)?;
+    let dest = destination_path(src, dst_dir)?;
+    if fs::metadata(src)?.is_dir() {
+        symlink_dir(target, dest)
+    } else {
+        symlink_file(target, dest)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    use super::copy_recursively;
+
+    static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let id = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
+        let path =
+            std::env::temp_dir().join(format!("stiff-copy-{name}-{}-{id}", std::process::id()));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).expect("create test directory");
+        path
+    }
+
+    #[test]
+    fn rejects_copying_directory_into_descendant() {
+        let root = temp_dir("descendant");
+        let src = root.join("source");
+        let dst = src.join("child");
+        fs::create_dir_all(&dst).expect("create source child");
+        fs::write(src.join("file.txt"), "content").expect("write source file");
+
+        let error = copy_recursively(&src, &dst).expect_err("descendant copy should fail");
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(!dst.join("source").exists());
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn rejects_source_without_file_name() {
+        let root = temp_dir("root");
+
+        let error = copy_recursively(PathBuf::from("/").as_path(), &root)
+            .expect_err("filesystem root should not be copyable");
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preserves_directory_symlink_without_following_it() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_dir("symlink");
+        let source_root = root.join("source");
+        let target = source_root.join("target");
+        let dst = root.join("destination");
+        fs::create_dir_all(&target).expect("create symlink target");
+        fs::create_dir_all(&dst).expect("create destination");
+        fs::write(target.join("file.txt"), "content").expect("write target file");
+        symlink("target", source_root.join("link")).expect("create directory symlink");
+
+        copy_recursively(&source_root.join("link"), &dst).expect("copy symlink");
+
+        let copied = dst.join("link");
+        assert!(
+            fs::symlink_metadata(&copied)
+                .expect("read copied metadata")
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            fs::read_link(copied).expect("read copied link"),
+            PathBuf::from("target")
+        );
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
 }
