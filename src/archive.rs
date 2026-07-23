@@ -10,8 +10,9 @@ use crate::core::{DirEntry, EntryLocation, format_mode, format_size};
 const ARCHIVE_READ_BUFFER: usize = 1024 * 1024;
 
 /// Run `f` with a `Read + Seek` handle to the archive. For local paths this
-/// opens a buffered file; for synthetic SFTP archive paths it locks the SFTP
-/// session for the host and streams via `ssh2::File`.
+/// opens a buffered file; for synthetic SFTP archive paths it clones the SFTP
+/// handle while holding the registry lock, then releases the lock before doing
+/// archive I/O.
 pub fn with_seek_reader<R, F>(archive_path: &Path, f: F) -> io::Result<R>
 where
     F: FnOnce(&mut (dyn ReadSeek + '_)) -> io::Result<R>,
@@ -19,11 +20,13 @@ where
     if let Some((host, remote_path)) = crate::sftp::decode_archive_path(archive_path) {
         let session = crate::sftp::get_session(&host)
             .ok_or_else(|| io::Error::other(format!("no active SFTP session for host {host}")))?;
-        let locked = session
+        let sftp = session
             .lock()
-            .map_err(|_| io::Error::other("session mutex poisoned"))?;
-        let mut file = locked
-            .sftp
+            .map_err(|_| io::Error::other("session mutex poisoned"))?
+            .session
+            .sftp()
+            .map_err(|e| io::Error::other(format!("open SFTP channel for {host}: {e}")))?;
+        let mut file = sftp
             .open(Path::new(&remote_path))
             .map_err(|e| io::Error::other(format!("open remote {remote_path}: {e}")))?;
         f(&mut file)
@@ -43,11 +46,13 @@ where
     if let Some((host, remote_path)) = crate::sftp::decode_archive_path(archive_path) {
         let session = crate::sftp::get_session(&host)
             .ok_or_else(|| io::Error::other(format!("no active SFTP session for host {host}")))?;
-        let locked = session
+        let sftp = session
             .lock()
-            .map_err(|_| io::Error::other("session mutex poisoned"))?;
-        let file = locked
-            .sftp
+            .map_err(|_| io::Error::other("session mutex poisoned"))?
+            .session
+            .sftp()
+            .map_err(|e| io::Error::other(format!("open SFTP channel for {host}: {e}")))?;
+        let file = sftp
             .open(Path::new(&remote_path))
             .map_err(|e| io::Error::other(format!("open remote {remote_path}: {e}")))?;
         f(Box::new(file))
