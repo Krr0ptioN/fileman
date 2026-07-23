@@ -51,6 +51,20 @@ pub fn selected_navigation(panel: &BrowserPanel) -> PanelNavigation {
         return PanelNavigation::Status("nothing selected".to_string());
     };
 
+    if panel.search.is_some() {
+        let Some(parent) = row.path.parent() else {
+            return PanelNavigation::Status("search result has no parent".to_string());
+        };
+        return PanelNavigation::Load {
+            path: parent.to_path_buf(),
+            prefer_name: row
+                .path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_string),
+        };
+    }
+
     match row.is_dir {
         true => PanelNavigation::Load {
             path: row.path.clone(),

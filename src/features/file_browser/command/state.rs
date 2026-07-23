@@ -1,6 +1,9 @@
 use crate::features::file_browser::{
     FileRow,
-    state::{BrowserPanel, InputMode, PanelSide, PendingConfirm},
+    state::{
+        BrowserListingSnapshot, BrowserPanel, FilenameSearchSession, InputMode, PanelSide,
+        PendingConfirm,
+    },
 };
 
 pub struct BrowserCommandState<'a> {
@@ -44,6 +47,11 @@ impl<'a> BrowserCommandState<'a> {
     }
 
     pub fn start_loading(panel: &mut BrowserPanel, path: std::path::PathBuf) -> u64 {
+        if let Some(search) = panel.search.take() {
+            search
+                .cancel
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         panel.load_generation = panel.load_generation.wrapping_add(1);
         panel.loading = true;
         panel.error = None;
@@ -51,6 +59,86 @@ impl<'a> BrowserCommandState<'a> {
         panel.clear_rows();
         panel.selected_index = 0;
         panel.load_generation
+    }
+
+    pub fn start_search(
+        panel: &mut BrowserPanel,
+        root: std::path::PathBuf,
+        query: String,
+    ) -> (u64, std::sync::Arc<std::sync::atomic::AtomicBool>) {
+        let previous = match panel.search.take() {
+            Some(search) => {
+                search
+                    .cancel
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                search.previous
+            }
+            None => BrowserListingSnapshot {
+                path: panel.path.clone(),
+                selected_index: panel.selected_index,
+                rows: panel.rows.clone(),
+                marked: panel.marked.clone(),
+            },
+        };
+        panel.search_generation = panel.search_generation.wrapping_add(1).max(1);
+        let generation = panel.search_generation;
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        panel.loading = true;
+        panel.error = None;
+        panel.search = Some(FilenameSearchSession {
+            root,
+            query,
+            generation,
+            cancel: cancel.clone(),
+            previous,
+        });
+        (generation, cancel)
+    }
+
+    pub fn apply_search_results(
+        panel: &mut BrowserPanel,
+        generation: u64,
+        result: anyhow::Result<Vec<crate::core::DirEntry>>,
+    ) -> Option<String> {
+        if panel.search_generation != generation
+            || panel.search.as_ref().map(|search| search.generation) != Some(generation)
+        {
+            return None;
+        }
+
+        panel.loading = false;
+        Some(match result {
+            Ok(entries) => {
+                panel.replace_rows(entries.into_iter().map(FileRow::from_entry).collect());
+                panel.clear_marks();
+                panel.selected_index = 0;
+                panel.error = None;
+                format!("{} search result(s)", panel.rows.len())
+            }
+            Err(error) => {
+                panel.clear_rows();
+                panel.selected_index = 0;
+                panel.error = Some(error.to_string());
+                format!("search failed: {error}")
+            }
+        })
+    }
+
+    pub fn cancel_search(panel: &mut BrowserPanel) -> bool {
+        let Some(search) = panel.search.take() else {
+            return false;
+        };
+        search
+            .cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        panel.search_generation = panel.search_generation.wrapping_add(1).max(1);
+        panel.path = search.previous.path;
+        panel.selected_index = search.previous.selected_index;
+        panel.rows = search.previous.rows;
+        panel.marked = search.previous.marked;
+        panel.loading = false;
+        panel.error = None;
+        true
     }
 
     pub fn apply_loaded(
@@ -148,6 +236,8 @@ mod tests {
             loading: false,
             error: Some("previous error".to_string()),
             load_generation: 7,
+            search_generation: 0,
+            search: None,
             scroll_handle: Default::default(),
         }
     }
@@ -185,6 +275,47 @@ mod tests {
         assert_eq!(panel.path, PathBuf::from("/tmp"));
         assert_eq!(panel.rows.len(), before_rows);
         assert_eq!(panel.selected_index, 1);
+    }
+
+    #[test]
+    fn cancelling_search_restores_previous_listing_and_selection() {
+        let mut panel = panel();
+        let previous_rows = panel.rows.clone();
+        let (_, cancel) = BrowserCommandState::start_search(
+            &mut panel,
+            PathBuf::from("/tmp"),
+            "needle".to_string(),
+        );
+        panel.replace_rows(vec![row("result")]);
+        panel.selected_index = 0;
+
+        assert!(BrowserCommandState::cancel_search(&mut panel));
+
+        assert!(cancel.load(std::sync::atomic::Ordering::Relaxed));
+        assert!(panel.search.is_none());
+        assert_eq!(panel.selected_index, 1);
+        assert_eq!(panel.rows.len(), previous_rows.len());
+        assert_eq!(panel.selected_name(), "old-b");
+    }
+
+    #[test]
+    fn stale_search_results_are_ignored_after_cancellation() {
+        let mut panel = panel();
+        let (generation, _) = BrowserCommandState::start_search(
+            &mut panel,
+            PathBuf::from("/tmp"),
+            "needle".to_string(),
+        );
+        BrowserCommandState::cancel_search(&mut panel);
+
+        let status = BrowserCommandState::apply_search_results(
+            &mut panel,
+            generation,
+            Ok(vec![entry("needle.txt", false)]),
+        );
+
+        assert!(status.is_none());
+        assert_eq!(panel.selected_name(), "old-b");
     }
 
     #[test]

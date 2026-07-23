@@ -7,6 +7,8 @@ pub enum BrowserCommand {
     Line(usize),
     OpenParent,
     OpenSelected,
+    FilenameSearch,
+    CancelSearch,
     ToggleMark(usize),
     ToggleAllMarks,
     ClearMarks,
@@ -41,6 +43,8 @@ impl BrowserCommand {
                 | Self::OpenHelp
                 | Self::NewDirectory
                 | Self::CancelTask
+                | Self::FilenameSearch
+                | Self::CancelSearch
         )
     }
 

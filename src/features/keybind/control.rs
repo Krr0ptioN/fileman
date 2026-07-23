@@ -3,6 +3,7 @@ use gpui::KeyDownEvent;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ControlAction {
     SwitchPanel,
+    FilenameSearch,
     QuickJump,
     PaneFocusPrefix,
     PreviewPageDown,
@@ -45,6 +46,7 @@ fn control_action_for_input(input: ControlInput<'_>) -> Option<ControlAction> {
     ) {
         (true, _, _, _, _, _, _) => None,
         (false, "tab", _, _, _, _, false) => Some(ControlAction::SwitchPanel),
+        (false, "f7", false, true, false, false, _) => Some(ControlAction::FilenameSearch),
         (false, "i" | "I", true, false, false, false, _) => Some(ControlAction::SwitchPanel),
         (false, "g" | "G", true, false, false, false, _) => Some(ControlAction::QuickJump),
         (false, "w" | "W", true, false, false, false, _) => Some(ControlAction::PaneFocusPrefix),
@@ -95,6 +97,18 @@ mod tests {
         assert_eq!(
             control_action_for_input(ctrl_g),
             Some(ControlAction::QuickJump)
+        );
+    }
+
+    #[test]
+    fn maps_alt_f7_to_filename_search() {
+        let mut alt_f7 = input("f7");
+        alt_f7.alt = true;
+        alt_f7.modified = true;
+
+        assert_eq!(
+            control_action_for_input(alt_f7),
+            Some(ControlAction::FilenameSearch)
         );
     }
 

@@ -3,7 +3,7 @@ use gpui::{Context, KeyDownEvent};
 use super::StiffShell;
 use crate::features::{
     clipboard::{PasteConflictDecision, PasteConflictPolicy, resolve_paste_conflict},
-    file_browser::{apply_confirm_action, apply_rename_action, start_quick_jump},
+    file_browser::{BrowserCommand, apply_confirm_action, apply_rename_action, start_quick_jump},
     keybind::{
         ControlAction, confirm_key_action, control_action, navigation_input, rename_key_action,
     },
@@ -114,6 +114,11 @@ impl StiffShell {
                 self.hide_preview_pane();
                 self.schedule_preview_preload(cx);
                 true
+            }
+            Some(ControlAction::FilenameSearch) => {
+                self.vim_command.clear();
+                self.leader_map_open = false;
+                self.execute_browser_command(BrowserCommand::FilenameSearch, "alt-f7", cx)
             }
             Some(ControlAction::QuickJump) => {
                 self.vim_command.clear();

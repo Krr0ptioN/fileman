@@ -1,4 +1,8 @@
-use std::{collections::HashSet, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashSet,
+    path::PathBuf,
+    sync::{Arc, atomic},
+};
 
 use gpui::{ScrollStrategy, UniformListScrollHandle};
 
@@ -17,6 +21,8 @@ pub struct BrowserPanel {
     pub loading: bool,
     pub error: Option<String>,
     pub load_generation: u64,
+    pub search_generation: u64,
+    pub search: Option<FilenameSearchSession>,
     pub scroll_handle: UniformListScrollHandle,
 }
 
@@ -85,6 +91,23 @@ impl BrowserPanel {
     }
 }
 
+#[derive(Clone)]
+pub struct FilenameSearchSession {
+    pub root: PathBuf,
+    pub query: String,
+    pub generation: u64,
+    pub cancel: Arc<atomic::AtomicBool>,
+    pub previous: BrowserListingSnapshot,
+}
+
+#[derive(Clone)]
+pub struct BrowserListingSnapshot {
+    pub path: PathBuf,
+    pub selected_index: usize,
+    pub rows: Arc<Vec<FileRow>>,
+    pub marked: Arc<HashSet<PathBuf>>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileTarget {
     pub path: PathBuf,
@@ -114,6 +137,10 @@ pub enum InputMode {
     },
     QuickJump {
         base: std::path::PathBuf,
+        input: String,
+    },
+    FilenameSearch {
+        root: std::path::PathBuf,
         input: String,
     },
 }

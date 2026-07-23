@@ -32,6 +32,13 @@ impl PanelHeader {
             _ => format!("{} rows", self.panel.rows.len()),
         }
     }
+
+    fn location(&self) -> String {
+        match self.panel.search.as_ref() {
+            Some(search) => format!("{} [find: {}]", search.root.display(), search.query),
+            None => self.panel.path.display().to_string(),
+        }
+    }
 }
 
 impl RenderOnce for PanelHeader {
@@ -70,7 +77,7 @@ impl RenderOnce for PanelHeader {
                 div()
                     .text_size(px(12.0))
                     .text_color(tokens::TEXT_SECONDARY)
-                    .child(self.panel.path.display().to_string()),
+                    .child(self.location()),
             )
     }
 }

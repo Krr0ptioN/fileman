@@ -62,6 +62,9 @@ impl StiffShell {
             BrowserCommandEffect::LoadActive { path, prefer_name } => {
                 self.load_panel(self.active, path, prefer_name, cx);
             }
+            BrowserCommandEffect::SearchActive { root, query } => {
+                self.search_panel(self.active, root, query, cx);
+            }
             BrowserCommandEffect::OpenWithSystem(path) => cx.open_with_system(&path),
             BrowserCommandEffect::Clipboard(effect) => self.apply_clipboard_effect(effect, cx),
             BrowserCommandEffect::RunOperation(operation) => self.run_operation(operation, cx),

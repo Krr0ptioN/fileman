@@ -11,7 +11,49 @@ pub fn apply_rename_action(
         InputMode::Rename { .. } => Some(apply_rename_mode_action(input_mode, action)),
         InputMode::NewDirectory { .. } => Some(apply_new_directory_action(input_mode, action)),
         InputMode::QuickJump { .. } => Some(apply_quick_jump_action(input_mode, action)),
+        InputMode::FilenameSearch { .. } => Some(apply_filename_search_action(input_mode, action)),
         InputMode::Normal => None,
+    }
+}
+
+fn apply_filename_search_action(
+    input_mode: &mut InputMode,
+    action: RenameModeAction,
+) -> BrowserCommandOutcome {
+    let InputMode::FilenameSearch {
+        ref root,
+        ref mut input,
+    } = *input_mode
+    else {
+        unreachable!("filename-search action requires filename-search input mode");
+    };
+
+    match action {
+        RenameModeAction::Cancel => {
+            *input_mode = InputMode::Normal;
+            BrowserCommandOutcome::status("search cancelled")
+        }
+        RenameModeAction::Backspace => {
+            input.pop();
+            BrowserCommandOutcome::status(format!("find: {input}"))
+        }
+        RenameModeAction::Submit => {
+            let root = root.clone();
+            let query = input.trim().to_string();
+            *input_mode = InputMode::Normal;
+            match query.is_empty() {
+                true => BrowserCommandOutcome::status("search unchanged"),
+                false => BrowserCommandOutcome::status_effect(
+                    format!("searching for {query}"),
+                    BrowserCommandEffect::SearchActive { root, query },
+                ),
+            }
+        }
+        RenameModeAction::Insert(ch) => {
+            input.push(ch);
+            BrowserCommandOutcome::status(format!("find: {input}"))
+        }
+        RenameModeAction::Consume => BrowserCommandOutcome::effect(BrowserCommandEffect::None),
     }
 }
 
@@ -340,6 +382,47 @@ mod tests {
         let outcome = apply_rename_action(&mut empty, RenameModeAction::Submit)
             .expect("quick-jump mode should handle submit");
         assert_eq!(outcome.status.as_deref(), Some("jump unchanged"));
+        assert!(matches!(outcome.effect, BrowserCommandEffect::None));
+    }
+
+    #[test]
+    fn filename_search_submit_requests_async_search() {
+        let mut mode = InputMode::FilenameSearch {
+            root: PathBuf::from("/tmp"),
+            input: "Needle".to_string(),
+        };
+
+        let outcome = apply_rename_action(&mut mode, RenameModeAction::Submit)
+            .expect("filename-search mode should handle submit");
+
+        assert!(matches!(mode, InputMode::Normal));
+        assert_eq!(outcome.status.as_deref(), Some("searching for Needle"));
+        assert!(matches!(
+            outcome.effect,
+            BrowserCommandEffect::SearchActive { ref root, ref query }
+                if root == &PathBuf::from("/tmp") && query == "Needle"
+        ));
+    }
+
+    #[test]
+    fn filename_search_cancel_and_empty_submit_do_not_search() {
+        let mut cancelled = InputMode::FilenameSearch {
+            root: PathBuf::from("/tmp"),
+            input: "needle".to_string(),
+        };
+        let outcome = apply_rename_action(&mut cancelled, RenameModeAction::Cancel)
+            .expect("filename-search mode should handle cancel");
+        assert!(matches!(cancelled, InputMode::Normal));
+        assert_eq!(outcome.status.as_deref(), Some("search cancelled"));
+        assert!(matches!(outcome.effect, BrowserCommandEffect::None));
+
+        let mut empty = InputMode::FilenameSearch {
+            root: PathBuf::from("/tmp"),
+            input: " ".to_string(),
+        };
+        let outcome = apply_rename_action(&mut empty, RenameModeAction::Submit)
+            .expect("filename-search mode should handle submit");
+        assert_eq!(outcome.status.as_deref(), Some("search unchanged"));
         assert!(matches!(outcome.effect, BrowserCommandEffect::None));
     }
 }

@@ -9,13 +9,14 @@ pub mod navigation;
 pub mod ops;
 pub mod preview;
 pub mod rows;
+pub mod search;
 pub mod selection;
 pub mod state;
 pub mod tokens;
 
 pub use actions::{
-    effective_targets, prepare_delete, selected_target, start_new_directory, start_quick_jump,
-    start_rename, toggle_all_marks, toggle_marked,
+    effective_targets, prepare_delete, selected_target, start_filename_search, start_new_directory,
+    start_quick_jump, start_rename, toggle_all_marks, toggle_marked,
 };
 pub use assets::StiffAssets;
 pub use command::{
@@ -38,5 +39,9 @@ pub use preview::{
     classify_preview, load_local_preview, preview_preload_decision,
 };
 pub use rows::FileRow;
+pub use search::search_fs_filenames;
 pub use selection::{delete_status, selection_status, toggle_targets};
-pub use state::{BrowserPanel, FileTarget, InputMode, PanelSide, PendingConfirm};
+pub use state::{
+    BrowserListingSnapshot, BrowserPanel, FileTarget, FilenameSearchSession, InputMode, PanelSide,
+    PendingConfirm,
+};

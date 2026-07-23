@@ -1,6 +1,7 @@
 use gpui::{Context, KeyDownEvent};
 
 use super::StiffShell;
+use crate::features::file_browser::BrowserCommandState;
 use crate::features::keybind::{
     AppKeyHandler, BrowserVimOutcome, HelpAction, apply_browser_vim_char,
 };
@@ -24,6 +25,10 @@ impl AppKeyHandler<Context<'_, StiffShell>> for StiffShell {
             return false;
         }
 
+        if BrowserCommandState::cancel_search(self.active_panel_mut()) {
+            self.status = "search closed".to_string();
+            return true;
+        }
         self.vim_command.clear();
         self.help_popup_open = false;
         self.leader_map_open = false;

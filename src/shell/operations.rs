@@ -9,6 +9,7 @@ use crate::{
         BrowserCommandState, FileOperation, FileTarget, OperationCompletion, PanelSide,
         PreviewBody, PreviewCacheEntry, PreviewPreloadDecision, PreviewRequest, PreviewState,
         VisibilityPolicy, load_local_preview, preview_preload_decision, read_visible_fs_directory,
+        search_fs_filenames,
     },
 };
 
@@ -77,6 +78,53 @@ impl StiffShell {
 
         let path = panel.path.clone();
         self.load_panel(side, path, None, cx);
+    }
+
+    pub(super) fn search_panel(
+        &mut self,
+        side: PanelSide,
+        root: PathBuf,
+        query: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.flush_preview_memory();
+        let (generation, cancel, policy) = {
+            let panel = self.panel_mut(side);
+            let policy = VisibilityPolicy {
+                show_hidden: panel.show_hidden,
+                show_ignored: panel.show_ignored,
+            };
+            let (generation, cancel) =
+                BrowserCommandState::start_search(panel, root.clone(), query.clone());
+            (generation, cancel, policy)
+        };
+        self.status = format!("searching for {query}");
+
+        cx.spawn(async move |shell, cx| {
+            let search_root = root.clone();
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    search_fs_filenames(&search_root, &query, policy, || {
+                        cancel.load(std::sync::atomic::Ordering::Relaxed)
+                    })
+                })
+                .await;
+
+            cx.update(|cx| {
+                let _ = shell.update(cx, |shell, cx| {
+                    let panel = shell.panel_mut(side);
+                    if let Some(status) =
+                        BrowserCommandState::apply_search_results(panel, generation, result)
+                    {
+                        shell.status = status;
+                        shell.panel_mut(side).reveal_selected();
+                        cx.notify();
+                    }
+                });
+            })
+        })
+        .detach();
     }
 
     fn reload_panels_after_operation(&mut self, cx: &mut Context<Self>) {

@@ -111,6 +111,8 @@ impl StiffShell {
             loading: false,
             error: None,
             load_generation: 0,
+            search_generation: 0,
+            search: None,
             scroll_handle: Default::default(),
         }
     }
@@ -141,6 +143,7 @@ impl StiffShell {
             (&InputMode::Rename { .. }, _) => "rename".to_string(),
             (&InputMode::NewDirectory { .. }, _) => "mkdir".to_string(),
             (&InputMode::QuickJump { .. }, _) => "jump".to_string(),
+            (&InputMode::FilenameSearch { .. }, _) => "find".to_string(),
             (_, &Some(_)) => "confirm".to_string(),
             _ if self.help_popup_open => "keys".to_string(),
             _ if self.leader_map_open => "leader".to_string(),

@@ -7,7 +7,7 @@ use super::{
 };
 use crate::features::file_browser::{
     effective_targets, parent_navigation, prepare_delete, selected_navigation, selected_target,
-    start_new_directory, start_rename, toggle_all_marks, toggle_marked,
+    start_filename_search, start_new_directory, start_rename, toggle_all_marks, toggle_marked,
 };
 
 pub fn execute_browser_command(
@@ -52,6 +52,14 @@ fn execute_ready_command(
         }
         OpenParent => parent_navigation(state.active_panel()).into_outcome(),
         OpenSelected => selected_navigation(state.active_panel()).into_outcome(),
+        FilenameSearch => BrowserCommandOutcome::status(start_filename_search(
+            state.input_mode,
+            state.active_panel().path.clone(),
+        )),
+        CancelSearch => match BrowserCommandState::cancel_search(state.active_panel_mut()) {
+            true => BrowserCommandOutcome::status("search closed").reveal_active(),
+            false => BrowserCommandOutcome::status("normal"),
+        },
         ToggleMark(count) => {
             let marked = toggle_marked(state.active_panel_mut(), count);
             BrowserCommandOutcome::status(format!("{marked} marked")).reveal_active()
@@ -185,6 +193,8 @@ mod tests {
             loading: false,
             error: None,
             load_generation: 0,
+            search_generation: 0,
+            search: None,
             scroll_handle: Default::default(),
         }
     }
@@ -281,6 +291,33 @@ mod tests {
             input_mode,
             InputMode::Rename { ref input, .. } if input == "alpha"
         ));
+    }
+
+    #[test]
+    fn filename_search_enters_input_mode_without_runtime_effects() {
+        let mut primary = panel(PanelSide::Left);
+        let mut secondary = panel(PanelSide::Right);
+        let mut active = PanelSide::Left;
+        let mut input_mode = InputMode::Normal;
+        let mut pending_confirm = None;
+
+        let outcome = with_state(
+            &mut primary,
+            &mut secondary,
+            &mut active,
+            &mut input_mode,
+            &mut pending_confirm,
+            BrowserCommand::FilenameSearch,
+            "alt-f7",
+        );
+
+        assert_eq!(outcome.status.as_deref(), Some("find: "));
+        assert!(matches!(
+            input_mode,
+            InputMode::FilenameSearch { ref root, ref input }
+                if root == &PathBuf::from("/tmp") && input.is_empty()
+        ));
+        assert!(matches!(outcome.effect, BrowserCommandEffect::None));
     }
 
     #[test]
@@ -424,6 +461,38 @@ mod tests {
             outcome.effect,
             BrowserCommandEffect::LoadActive { ref path, prefer_name: None }
                 if path == &PathBuf::from("/tmp/alpha")
+        ));
+    }
+
+    #[test]
+    fn opening_search_result_navigates_to_parent_and_selects_entry() {
+        let mut primary = panel(PanelSide::Left);
+        BrowserCommandState::start_search(&mut primary, PathBuf::from("/tmp"), "beta".to_string());
+        let mut result = row("beta.txt", false);
+        result.name = "nested/beta.txt".into();
+        result.path = PathBuf::from("/tmp/nested/beta.txt");
+        primary.replace_rows(vec![result]);
+        let mut secondary = panel(PanelSide::Right);
+        let mut active = PanelSide::Left;
+        let mut input_mode = InputMode::Normal;
+        let mut pending_confirm = None;
+
+        let outcome = with_state(
+            &mut primary,
+            &mut secondary,
+            &mut active,
+            &mut input_mode,
+            &mut pending_confirm,
+            BrowserCommand::OpenSelected,
+            "l",
+        );
+
+        assert!(matches!(
+            outcome.effect,
+            BrowserCommandEffect::LoadActive {
+                ref path,
+                prefer_name: Some(ref name),
+            } if path == &PathBuf::from("/tmp/nested") && name == "beta.txt"
         ));
     }
 
