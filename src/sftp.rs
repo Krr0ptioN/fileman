@@ -13,6 +13,8 @@ use ssh2::{self, Session, Sftp};
 
 use crate::core::{DirEntry, EntryLocation};
 
+const FULL_READ_INITIAL_CAPACITY: usize = 8 * 1024 * 1024;
+
 pub struct SftpSession {
     pub session: Session,
     pub sftp: Sftp,
@@ -418,6 +420,7 @@ pub fn read_file_full_progress(
     let initial_capacity = stat
         .and_then(|file_stat| file_stat.size)
         .and_then(|size| usize::try_from(size).ok())
+        .map(|size| size.min(FULL_READ_INITIAL_CAPACITY))
         .unwrap_or_default();
     let mut buf = Vec::with_capacity(initial_capacity);
     let mut chunk = vec![0u8; 64 * 1024];
