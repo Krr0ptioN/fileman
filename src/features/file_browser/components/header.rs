@@ -1,7 +1,7 @@
 use gpui::{App, IntoElement, ParentElement, RenderOnce, Styled, Window, div, px};
 use gpui_component::{h_flex, v_flex};
 
-use crate::features::file_browser::{state::BrowserPanel, tokens};
+use crate::features::{file_browser::{state::BrowserPanel, tokens}, layout::{LayoutState, PaneMode}};
 
 #[derive(IntoElement)]
 pub(crate) struct PanelHeader {
@@ -32,33 +32,41 @@ impl PanelHeader {
 }
 
 impl RenderOnce for PanelHeader {
-    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         v_flex()
             .gap_1()
             .p_3()
             .bg(tokens::BG_PANEL_RAISED)
             .border_b_1()
             .border_color(tokens::BORDER_SUBTLE)
-            .child(
-                h_flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        div()
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .text_color(if self.active {
-                                tokens::TEXT_PRIMARY
-                            } else {
-                                tokens::TEXT_SECONDARY
-                            })
-                            .child(self.panel.title),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(11.0))
-                            .text_color(tokens::TEXT_MUTED)
-                            .child(self.status()),
-                    ),
+            .child((
+                || {
+                    let pane_mode = cx.global::<LayoutState>().pane_mode();
+                    match pane_mode {
+                        PaneMode::Single => div(),
+                        PaneMode::Dual => {
+                            h_flex()
+                                .items_center()
+                                .justify_between()
+                                .child(
+                                    div()
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(if self.active {
+                                        tokens::TEXT_PRIMARY
+                                    } else {
+                                        tokens::TEXT_SECONDARY
+                                    })
+                                    .child(self.panel.title),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .text_color(tokens::TEXT_MUTED)
+                                    .child(self.status()),
+                            )
+                        }
+                    } 
+                })()
             )
             .child(
                 div()
