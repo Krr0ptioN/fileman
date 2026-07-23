@@ -84,6 +84,10 @@ path = "src/bin/snapshot_compare.rs"
 name = "sftp_localhost"
 path = "tests/sftp_localhost.rs"
 
+[[bench]]
+name = "directory_load"
+harness = false
+
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
 
