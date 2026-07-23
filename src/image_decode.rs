@@ -1073,7 +1073,7 @@ fn parse_jpeg_components(payload: &[u8]) -> Option<(u16, u16, Vec<JpegComponent>
     let height = u16::from_be_bytes([*payload.get(1)?, *payload.get(2)?]);
     let width = u16::from_be_bytes([*payload.get(3)?, *payload.get(4)?]);
     let count = usize::from(*payload.get(5)?);
-    if width == 0 || height == 0 || !(1..=4).contains(&count) {
+    if width == 0 || height == 0 || !matches!(count, 1 | 3) {
         return None;
     }
     let component_bytes = payload.get(6..6usize.checked_add(count.checked_mul(3)?)?)?;
@@ -1171,6 +1171,29 @@ fn parse_jpeg_header(bytes: &[u8]) -> Option<JpegHeader> {
     }
 }
 
+fn allocate_dc_planes(
+    components: &[JpegComponent],
+    mcu_width: usize,
+    mcu_height: usize,
+) -> Option<Vec<Vec<f32>>> {
+    const MAX_DC_BLOCKS: usize = 16 * 1024 * 1024;
+
+    let mut total_blocks = 0usize;
+    let mut planes = Vec::with_capacity(components.len());
+    for component in components {
+        let blocks = mcu_width
+            .checked_mul(component.h_samp)?
+            .checked_mul(mcu_height)?
+            .checked_mul(component.v_samp)?;
+        total_blocks = total_blocks.checked_add(blocks)?;
+        if total_blocks > MAX_DC_BLOCKS {
+            return None;
+        }
+        planes.push(vec![0.0f32; blocks]);
+    }
+    Some(planes)
+}
+
 /// Decode a baseline JPEG at 1/8 scale using only DC coefficients.
 fn decode_jpeg_dc_only(bytes: &[u8], max_side: u32) -> Option<(DecodedImage, ImageMeta)> {
     let JpegHeader {
@@ -1191,21 +1214,7 @@ fn decode_jpeg_dc_only(bytes: &[u8], max_side: u32) -> Option<(DecodedImage, Ima
     let v_max = components.iter().map(|c| c.v_samp).max().unwrap_or(1);
     let mcu_w = w.div_ceil(h_max * 8);
     let mcu_h = h.div_ceil(v_max * 8);
-    // Allocate DC coefficient planes for each component
-    const MAX_DC_BLOCKS: usize = 16 * 1024 * 1024;
-    let mut total_blocks = 0usize;
-    let mut dc_planes = Vec::with_capacity(components.len());
-    for component in &components {
-        let blocks = mcu_w
-            .checked_mul(component.h_samp)?
-            .checked_mul(mcu_h)?
-            .checked_mul(component.v_samp)?;
-        total_blocks = total_blocks.checked_add(blocks)?;
-        if total_blocks > MAX_DC_BLOCKS {
-            return None;
-        }
-        dc_planes.push(vec![0.0f32; blocks]);
-    }
+    let mut dc_planes = allocate_dc_planes(&components, mcu_w, mcu_h)?;
 
     let mut reader = BitReader::new(bytes, entropy_start);
     let mut dc_pred = [0i32; 4];
@@ -1597,7 +1606,7 @@ fn downscale_rgba(
 
 #[cfg(test)]
 mod tests {
-    use super::decode_jpeg_dc_preview;
+    use super::{decode_jpeg_dc_preview, parse_jpeg_components};
 
     #[test]
     fn malformed_jpeg_segment_lengths_are_rejected() {
@@ -1619,5 +1628,16 @@ mod tests {
         ];
 
         assert!(decode_jpeg_dc_preview(&bytes, 64).is_none());
+    }
+
+    #[test]
+    fn unsupported_two_component_jpeg_is_rejected() {
+        let components = [
+            0x08, 0x00, 0x01, 0x00, 0x01, 0x02, // dimensions and count
+            0x01, 0x11, 0x00, // first component
+            0x02, 0x11, 0x00, // second component
+        ];
+
+        assert!(parse_jpeg_components(&components).is_none());
     }
 }
