@@ -31,7 +31,7 @@ pub use ignored::{
 pub use mode_action::{ConfirmModeAction, RenameModeAction};
 pub use mode_executor::{apply_confirm_action, apply_rename_action};
 pub use navigation::{PanelNavigation, parent_navigation, selected_navigation};
-pub use ops::FileOperation;
+pub use ops::{FileOperation, OperationCompletion};
 pub use preview::{
     BinaryPreview, PreviewBody, PreviewCacheEntry, PreviewKind, PreviewListing,
     PreviewPreloadDecision, PreviewRequest, PreviewState, PreviewViewport, TextPreview,

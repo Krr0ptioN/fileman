@@ -24,7 +24,13 @@ pub struct PasteConflictDecision {
 pub struct PlannedPaste {
     pub target: FileTarget,
     pub destination: PathBuf,
-    pub overwrite: bool,
+    pub disposition: PasteDisposition,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PasteDisposition {
+    Create,
+    Overwrite,
 }
 
 pub struct PasteBatch {
@@ -58,6 +64,7 @@ pub enum PastePlan {
 }
 
 pub fn plan_paste(clipboard: &ClipboardState, dst_dir: PathBuf) -> PastePlan {
+    let default_conflict_policy = clipboard.default_conflict_policy;
     match clipboard.op.clone() {
         Some(clipboard) => advance(PendingPaste {
             kind: clipboard.kind,
@@ -65,7 +72,7 @@ pub fn plan_paste(clipboard: &ClipboardState, dst_dir: PathBuf) -> PastePlan {
             remaining: clipboard.targets.into(),
             planned: Vec::new(),
             destinations: HashSet::new(),
-            apply_policy: None,
+            apply_policy: default_conflict_policy,
         }),
         None => PastePlan::Empty,
     }
@@ -88,7 +95,7 @@ pub fn resolve_paste_conflict(
 fn advance(mut pending: PendingPaste) -> PastePlan {
     while let Some(target) = pending.remaining.front() {
         let destination = pending.dst_dir.join(&target.name);
-        let collides = destination.exists() || pending.destinations.contains(&destination);
+        let collides = path_occupied(&destination) || pending.destinations.contains(&destination);
         if collides {
             if let Some(policy) = pending.apply_policy {
                 apply_policy(&mut pending, policy);
@@ -102,7 +109,7 @@ fn advance(mut pending: PendingPaste) -> PastePlan {
                 pending,
             };
         }
-        push_planned(&mut pending, destination, false);
+        push_planned(&mut pending, destination, PasteDisposition::Create);
     }
 
     PastePlan::Ready(PasteBatch {
@@ -121,22 +128,24 @@ fn apply_policy(pending: &mut PendingPaste, policy: PasteConflictPolicy) {
         PasteConflictPolicy::Skip => {
             pending.remaining.pop_front();
         }
-        PasteConflictPolicy::Overwrite => push_planned(pending, destination, true),
+        PasteConflictPolicy::Overwrite => {
+            push_planned(pending, destination, PasteDisposition::Overwrite)
+        }
         PasteConflictPolicy::Rename => {
             let renamed = available_destination(&destination, &pending.destinations);
-            push_planned(pending, renamed, false);
+            push_planned(pending, renamed, PasteDisposition::Create);
         }
         PasteConflictPolicy::Cancel => {}
     }
 }
 
-fn push_planned(pending: &mut PendingPaste, destination: PathBuf, overwrite: bool) {
+fn push_planned(pending: &mut PendingPaste, destination: PathBuf, disposition: PasteDisposition) {
     if let Some(target) = pending.remaining.pop_front() {
         pending.destinations.insert(destination.clone());
         pending.planned.push(PlannedPaste {
             target,
             destination,
-            overwrite,
+            disposition,
         });
     }
 }
@@ -156,11 +165,15 @@ fn available_destination(destination: &Path, reserved: &HashSet<PathBuf>) -> Pat
             None => format!("{stem} ({suffix})"),
         };
         let candidate = parent.join(name);
-        if !candidate.exists() && !reserved.contains(&candidate) {
+        if !path_occupied(&candidate) && !reserved.contains(&candidate) {
             return candidate;
         }
     }
     unreachable!()
+}
+
+fn path_occupied(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok()
 }
 
 #[cfg(test)]
@@ -176,6 +189,7 @@ mod tests {
                 paths: Arc::new(targets.iter().map(|target| target.path.clone()).collect()),
                 targets,
             }),
+            default_conflict_policy: None,
         }
     }
 
@@ -292,6 +306,23 @@ mod tests {
         ) else {
             panic!("expected ready batch");
         };
+        assert!(batch.items.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn configured_default_policy_resolves_without_prompting() {
+        let root = std::env::temp_dir().join(format!("stiff-paste-default-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("destination")).unwrap();
+        fs::write(root.join("destination/a.txt"), "existing").unwrap();
+        let mut clipboard = clipboard(vec![target(&root, "a.txt")]);
+        clipboard.default_conflict_policy = Some(PasteConflictPolicy::Skip);
+
+        let PastePlan::Ready(batch) = plan_paste(&clipboard, root.join("destination")) else {
+            panic!("configured policy should avoid prompt");
+        };
+
         assert!(batch.items.is_empty());
         fs::remove_dir_all(root).unwrap();
     }

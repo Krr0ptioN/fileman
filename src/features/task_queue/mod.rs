@@ -1,10 +1,4 @@
-use std::{
-    collections::VecDeque,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
-    },
-};
+use std::{collections, sync};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TaskId(u64);
@@ -48,32 +42,34 @@ pub struct TaskRecord {
     pub bytes_done: u64,
     pub bytes_total: u64,
     pub detail: Option<String>,
-    runtime: Arc<TaskRuntime>,
+    runtime: sync::Arc<TaskRuntime>,
 }
 
 pub struct TaskRuntime {
-    cancelled: AtomicBool,
-    items_done: AtomicU64,
-    bytes_done: AtomicU64,
+    cancelled: sync::atomic::AtomicBool,
+    items_done: sync::atomic::AtomicU64,
+    bytes_done: sync::atomic::AtomicU64,
 }
 
 impl TaskRuntime {
     pub fn is_cancelled(&self) -> bool {
-        self.cancelled.load(Ordering::Relaxed)
+        self.cancelled.load(sync::atomic::Ordering::Relaxed)
     }
 
     pub fn add_item(&self) {
-        self.items_done.fetch_add(1, Ordering::Relaxed);
+        self.items_done
+            .fetch_add(1, sync::atomic::Ordering::Relaxed);
     }
 
     pub fn add_bytes(&self, bytes: u64) {
-        self.bytes_done.fetch_add(bytes, Ordering::Relaxed);
+        self.bytes_done
+            .fetch_add(bytes, sync::atomic::Ordering::Relaxed);
     }
 
     pub fn snapshot(&self) -> (u64, u64) {
         (
-            self.items_done.load(Ordering::Relaxed),
-            self.bytes_done.load(Ordering::Relaxed),
+            self.items_done.load(sync::atomic::Ordering::Relaxed),
+            self.bytes_done.load(sync::atomic::Ordering::Relaxed),
         )
     }
 }
@@ -81,7 +77,7 @@ impl TaskRuntime {
 pub struct TaskQueue {
     next_id: u64,
     history_limit: usize,
-    tasks: VecDeque<TaskRecord>,
+    tasks: collections::VecDeque<TaskRecord>,
 }
 
 impl TaskQueue {
@@ -89,7 +85,7 @@ impl TaskQueue {
         Self {
             next_id: 1,
             history_limit,
-            tasks: VecDeque::new(),
+            tasks: collections::VecDeque::new(),
         }
     }
 
@@ -105,10 +101,10 @@ impl TaskQueue {
             bytes_done: 0,
             bytes_total,
             detail: None,
-            runtime: Arc::new(TaskRuntime {
-                cancelled: AtomicBool::new(false),
-                items_done: AtomicU64::new(0),
-                bytes_done: AtomicU64::new(0),
+            runtime: sync::Arc::new(TaskRuntime {
+                cancelled: sync::atomic::AtomicBool::new(false),
+                items_done: sync::atomic::AtomicU64::new(0),
+                bytes_done: sync::atomic::AtomicU64::new(0),
             }),
         });
         self.trim_history();
@@ -119,8 +115,8 @@ impl TaskQueue {
         self.tasks.iter().find(|task| task.id == id)
     }
 
-    pub fn runtime(&self, id: TaskId) -> Option<Arc<TaskRuntime>> {
-        self.task(id).map(|task| Arc::clone(&task.runtime))
+    pub fn runtime(&self, id: TaskId) -> Option<sync::Arc<TaskRuntime>> {
+        self.task(id).map(|task| sync::Arc::clone(&task.runtime))
     }
 
     pub fn start(&mut self, id: TaskId) -> bool {
@@ -139,8 +135,12 @@ impl TaskQueue {
             0 => bytes_done,
             total => bytes_done.min(total),
         };
-        task.runtime.items_done.store(items_done, Ordering::Relaxed);
-        task.runtime.bytes_done.store(bytes_done, Ordering::Relaxed);
+        task.runtime
+            .items_done
+            .store(items_done, sync::atomic::Ordering::Relaxed);
+        task.runtime
+            .bytes_done
+            .store(bytes_done, sync::atomic::Ordering::Relaxed);
         true
     }
 
@@ -169,7 +169,9 @@ impl TaskQueue {
         };
         match task.state {
             TaskState::Queued | TaskState::Running => {
-                task.runtime.cancelled.store(true, Ordering::Relaxed);
+                task.runtime
+                    .cancelled
+                    .store(true, sync::atomic::Ordering::Relaxed);
                 task.state = TaskState::Cancelled;
             }
             TaskState::Cancelled => {}
@@ -194,6 +196,7 @@ impl TaskQueue {
     }
 
     pub fn status_line(&self) -> String {
+        let mut parts = Vec::new();
         if let Some(task) = self
             .tasks
             .iter()
@@ -205,22 +208,25 @@ impl TaskQueue {
                 runtime_items.max(task.items_done).min(task.items_total),
                 task.items_total
             );
-            return match task.bytes_total {
-                0 => format!("{} {items}", task.kind.label()),
-                total => format!(
+            let running = match (task.bytes_total, runtime_bytes) {
+                (0, 0) => format!("{} {items}", task.kind.label()),
+                (0, bytes) => format!("{} {items} · {bytes} B", task.kind.label()),
+                (total, bytes) => format!(
                     "{} {items} · {}/{} B",
                     task.kind.label(),
-                    runtime_bytes.max(task.bytes_done).min(total),
+                    bytes.max(task.bytes_done).min(total),
                     total
                 ),
             };
+            parts.push(running);
         }
-        if let Some(task) = self
+        let queued = self
             .tasks
             .iter()
-            .find(|task| task.state == TaskState::Queued)
-        {
-            return format!("{} queued", task.kind.label());
+            .filter(|task| task.state == TaskState::Queued)
+            .count();
+        if queued > 0 {
+            parts.push(format!("{queued} queued"));
         }
         for (state, label) in [
             (TaskState::Failed, "failed"),
@@ -229,10 +235,10 @@ impl TaskQueue {
         ] {
             let count = self.tasks.iter().filter(|task| task.state == state).count();
             if count > 0 {
-                return format!("{count} {label}");
+                parts.push(format!("{count} {label}"));
             }
         }
-        String::new()
+        parts.join(" · ")
     }
 
     fn transition(
@@ -313,5 +319,22 @@ mod tests {
         );
         assert_eq!(queue.task(task).map(|task| task.items_done), Some(1));
         assert_eq!(queue.status_line(), "1 cancelled");
+    }
+
+    #[test]
+    fn status_lists_running_queued_and_terminal_counts_together() {
+        let mut queue = TaskQueue::new(8);
+        let failed = queue.enqueue(TaskKind::Delete, 1, 0);
+        queue.start(failed);
+        queue.fail(failed, "denied".to_string());
+        let running = queue.enqueue(TaskKind::Copy, 2, 0);
+        queue.start(running);
+        queue.update(running, 0, 64);
+        queue.enqueue(TaskKind::Move, 1, 0);
+
+        assert_eq!(
+            queue.status_line(),
+            "copy 0/2 items · 64 B · 1 queued · 1 failed"
+        );
     }
 }

@@ -2,6 +2,7 @@ use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 use gpui::Global;
 
+use super::paste::PasteConflictPolicy;
 use crate::features::file_browser::FileTarget;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -20,6 +21,7 @@ pub struct ClipboardOp {
 #[derive(Default)]
 pub struct ClipboardState {
     pub(crate) op: Option<ClipboardOp>,
+    pub default_conflict_policy: Option<PasteConflictPolicy>,
 }
 
 impl ClipboardState {

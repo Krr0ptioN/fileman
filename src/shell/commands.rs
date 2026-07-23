@@ -125,6 +125,10 @@ impl StiffShell {
             }
             PastePlan::Ready(batch) => {
                 self.pending_paste = None;
+                if batch.items.is_empty() {
+                    self.status = "paste skipped".to_string();
+                    return;
+                }
                 if batch.clear_after_paste {
                     ClipboardState::update_global(cx, |clipboard, _| clipboard.clear());
                 }

@@ -6,9 +6,9 @@ use super::{StiffShell, state::ShellPaneFocus};
 use crate::{
     core,
     features::file_browser::{
-        BrowserCommandState, FileOperation, FileTarget, PanelSide, PreviewBody, PreviewCacheEntry,
-        PreviewPreloadDecision, PreviewRequest, PreviewState, VisibilityPolicy, load_local_preview,
-        preview_preload_decision, read_visible_fs_directory,
+        BrowserCommandState, FileOperation, FileTarget, OperationCompletion, PanelSide,
+        PreviewBody, PreviewCacheEntry, PreviewPreloadDecision, PreviewRequest, PreviewState,
+        VisibilityPolicy, load_local_preview, preview_preload_decision, read_visible_fs_directory,
     },
 };
 
@@ -87,11 +87,9 @@ impl StiffShell {
     }
 
     pub(super) fn run_operation(&mut self, operation: FileOperation, cx: &mut Context<Self>) {
-        let task = self.task_queue.enqueue(
-            operation.task_kind(),
-            operation.item_total(),
-            operation.byte_total(),
-        );
+        let task = self
+            .task_queue
+            .enqueue(operation.task_kind(), operation.item_total(), 0);
         self.operation_queue.push_back((task, operation));
         self.status = self.task_queue.status_line();
         self.start_next_operation(cx);
@@ -125,7 +123,7 @@ impl StiffShell {
                     shell.operation_in_flight = false;
                     shell.active_task = None;
                     shell.status = result.status;
-                    if result.cancelled {
+                    if result.completion == OperationCompletion::Cancelled {
                         shell.task_queue.cancel(task);
                     } else if result.errors.is_empty() {
                         shell.task_queue.complete(task);

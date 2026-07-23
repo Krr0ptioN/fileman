@@ -3,7 +3,7 @@ use std::fs;
 use crate::{
     core,
     features::{
-        clipboard::{ClipboardKind, PlannedPaste},
+        clipboard::{ClipboardKind, PasteDisposition, PlannedPaste},
         task_queue::{TaskKind, TaskRuntime},
     },
 };
@@ -78,18 +78,6 @@ impl FileOperation {
         }
     }
 
-    pub fn byte_total(&self) -> u64 {
-        match *self {
-            Self::Paste { ref items, .. } => items
-                .iter()
-                .filter_map(|item| fs::metadata(&item.target.path).ok())
-                .filter(|metadata| metadata.is_file())
-                .map(|metadata| metadata.len())
-                .sum(),
-            _ => 0,
-        }
-    }
-
     pub fn run(self, runtime: &TaskRuntime) -> OperationReport {
         match self {
             Self::Paste { kind, items } => {
@@ -111,7 +99,7 @@ impl FileOperation {
                     ClipboardKind::Copy => "copied",
                     ClipboardKind::Move => "moved",
                 };
-                OperationReport::new(op, completed, total, runtime.is_cancelled(), errors)
+                OperationReport::new(op, completed, total, completion(runtime), errors)
             }
             Self::Delete { targets } => {
                 let total = targets.len();
@@ -127,7 +115,7 @@ impl FileOperation {
                     }
                     runtime.add_item();
                 }
-                OperationReport::new("deleted", completed, total, runtime.is_cancelled(), errors)
+                OperationReport::new("deleted", completed, total, completion(runtime), errors)
             }
             Self::Rename { target, new_name } => {
                 let dst = target.path.with_file_name(&new_name);
@@ -135,8 +123,20 @@ impl FileOperation {
                     .map_err(|error| format!("rename {}: {error}", target.path.display()));
                 runtime.add_item();
                 match result {
-                    Ok(()) => OperationReport::new("renamed", 1, 1, false, Vec::new()),
-                    Err(error) => OperationReport::new("renamed", 0, 1, false, vec![error]),
+                    Ok(()) => OperationReport::new(
+                        "renamed",
+                        1,
+                        1,
+                        OperationCompletion::Finished,
+                        Vec::new(),
+                    ),
+                    Err(error) => OperationReport::new(
+                        "renamed",
+                        0,
+                        1,
+                        OperationCompletion::Finished,
+                        vec![error],
+                    ),
                 }
             }
             Self::NewDirectory { path } => {
@@ -144,11 +144,30 @@ impl FileOperation {
                     .map_err(|error| format!("mkdir {}: {error}", path.display()));
                 runtime.add_item();
                 match result {
-                    Ok(()) => OperationReport::new("created", 1, 1, false, Vec::new()),
-                    Err(error) => OperationReport::new("created", 0, 1, false, vec![error]),
+                    Ok(()) => OperationReport::new(
+                        "created",
+                        1,
+                        1,
+                        OperationCompletion::Finished,
+                        Vec::new(),
+                    ),
+                    Err(error) => OperationReport::new(
+                        "created",
+                        0,
+                        1,
+                        OperationCompletion::Finished,
+                        vec![error],
+                    ),
                 }
             }
         }
+    }
+}
+
+fn completion(runtime: &TaskRuntime) -> OperationCompletion {
+    match runtime.is_cancelled() {
+        true => OperationCompletion::Cancelled,
+        false => OperationCompletion::Finished,
     }
 }
 
@@ -156,8 +175,14 @@ pub struct OperationReport {
     pub status: String,
     pub completed: usize,
     pub total: usize,
-    pub cancelled: bool,
+    pub completion: OperationCompletion,
     pub errors: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OperationCompletion {
+    Finished,
+    Cancelled,
 }
 
 impl OperationReport {
@@ -165,10 +190,10 @@ impl OperationReport {
         verb: &str,
         completed: usize,
         total: usize,
-        cancelled: bool,
+        completion: OperationCompletion,
         errors: Vec<String>,
     ) -> Self {
-        let status = if cancelled {
+        let status = if completion == OperationCompletion::Cancelled {
             format!("{verb} {completed}/{total} item(s), cancelled")
         } else if errors.is_empty() {
             format!("{verb} {completed} item(s)")
@@ -182,7 +207,7 @@ impl OperationReport {
             status,
             completed,
             total,
-            cancelled,
+            completion,
             errors,
         }
     }
@@ -199,14 +224,16 @@ fn paste_target(
             item.target.name
         );
     }
-    if !item.overwrite && item.destination.exists() {
+    let destination_metadata = fs::symlink_metadata(&item.destination).ok();
+    let destination_exists = destination_metadata.is_some();
+    if item.disposition == PasteDisposition::Create && destination_exists {
         anyhow::bail!(
             "destination appeared after planning: {}",
             item.destination.display()
         );
     }
-    if item.overwrite && item.destination.exists() {
-        let is_dir = item.destination.is_dir();
+    if item.disposition == PasteDisposition::Overwrite && destination_exists {
+        let is_dir = destination_metadata.is_some_and(|metadata| metadata.file_type().is_dir());
         core::delete_path(&item.destination, is_dir)?;
     }
     match kind {

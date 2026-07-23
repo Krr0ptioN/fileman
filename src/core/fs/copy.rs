@@ -183,6 +183,7 @@ fn copy_symlink_to(src: &Path, destination: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use std::{
+        cell::Cell,
         fs,
         path::PathBuf,
         sync::atomic::{AtomicU64, Ordering},
@@ -245,8 +246,6 @@ mod tests {
 
     #[test]
     fn progress_copy_stops_when_cancelled() {
-        use std::cell::Cell;
-
         let root = temp_dir("cancel-progress");
         let source = root.join("source.bin");
         let destination = root.join("destination.bin");
