@@ -154,7 +154,7 @@ fn decode_gif_bytes(bytes: &[u8], max_side: u32) -> Option<(DecodedImage, ImageM
     let mut frames = Vec::new();
 
     while let Ok(Some(frame)) = decoder.read_next_frame() {
-        let saved = canvas.clone();
+        let saved = (frame.dispose == gif::DisposalMethod::Previous).then(|| canvas.clone());
 
         // Composite frame onto canvas
         let fw = frame.width as usize;
@@ -206,7 +206,9 @@ fn decode_gif_bytes(bytes: &[u8], max_side: u32) -> Option<(DecodedImage, ImageM
                 }
             }
             gif::DisposalMethod::Previous => {
-                canvas = saved;
+                if let Some(saved) = saved {
+                    canvas = saved;
+                }
             }
         }
 

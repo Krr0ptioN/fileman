@@ -410,12 +410,16 @@ pub fn read_file_full_progress(
 ) -> Result<Vec<u8>, String> {
     let stat = sftp.stat(Path::new(path)).ok();
     if let Some(p) = progress {
-        p.reset(stat.and_then(|s| s.size).unwrap_or(0));
+        p.reset(stat.as_ref().and_then(|s| s.size).unwrap_or(0));
     }
     let mut file = sftp
         .open(Path::new(path))
         .map_err(|e| format!("open {path}: {e}"))?;
-    let mut buf = Vec::new();
+    let initial_capacity = stat
+        .and_then(|file_stat| file_stat.size)
+        .and_then(|size| usize::try_from(size).ok())
+        .unwrap_or_default();
+    let mut buf = Vec::with_capacity(initial_capacity);
     let mut chunk = vec![0u8; 64 * 1024];
     loop {
         match file.read(&mut chunk) {
@@ -1130,7 +1134,7 @@ mod tests {
 
     #[test]
     fn cancellation_detection_follows_io_error_sources() {
-        let wrapped = io::Error::new(io::ErrorKind::Other, super::cancellation_io_error());
+        let wrapped = io::Error::other(super::cancellation_io_error());
 
         assert!(is_cancel_error(&wrapped));
     }
