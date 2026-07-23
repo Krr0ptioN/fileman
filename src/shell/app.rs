@@ -14,7 +14,6 @@ pub fn run(start_path: Option<PathBuf>) {
             install_stiff_theme(app);
             app.set_global(ClipboardState::default());
             app.set_global(LayoutState::default());
-            let start_path = start_path.clone();
 
             let bounds = Bounds::centered(None, size(px(1180.0), px(720.0)), app);
             app.open_window(
@@ -25,7 +24,7 @@ pub fn run(start_path: Option<PathBuf>) {
                     ..Default::default()
                 },
                 |window, cx| {
-                    window.set_window_title("stiff");
+                    window.set_window_title("Stiff");
                     let shell = cx.new(|cx| StiffShell::new(cx.focus_handle(), start_path, cx));
                     shell.read(cx).focus_handle.focus(window);
                     cx.new(|cx| Root::new(shell, window, cx))
