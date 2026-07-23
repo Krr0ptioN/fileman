@@ -104,7 +104,7 @@ fn execute_ready_command(
                 status,
                 BrowserCommandEffect::LoadActive {
                     path: panel.path.clone(),
-                    prefer_name: panel.selected_row().map(|row| row.name.clone()),
+                    prefer_name: panel.selected_row().map(|row| row.name.to_string()),
                 },
             )
         }
@@ -119,7 +119,7 @@ fn execute_ready_command(
                 status,
                 BrowserCommandEffect::LoadActive {
                     path: panel.path.clone(),
-                    prefer_name: panel.selected_row().map(|row| row.name.clone()),
+                    prefer_name: panel.selected_row().map(|row| row.name.to_string()),
                 },
             )
         }
@@ -163,8 +163,8 @@ mod tests {
             } else {
                 RowKind::File(FileFormat::Text)
             },
-            name: name.to_string(),
-            detail: String::new(),
+            name: name.to_string().into(),
+            detail: String::new().into(),
             path: PathBuf::from(format!("/tmp/{name}")),
             is_dir,
             is_executable: false,
@@ -449,7 +449,8 @@ mod tests {
         assert!(matches!(
             outcome.effect,
             BrowserCommandEffect::Preview(ref target)
-                if target.name == "beta.txt" && target.path == PathBuf::from("/tmp/beta.txt")
+                if target.name == "beta.txt"
+                    && target.path.as_path() == std::path::Path::new("/tmp/beta.txt")
         ));
     }
 

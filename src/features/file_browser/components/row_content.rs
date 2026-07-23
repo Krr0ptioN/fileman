@@ -1,4 +1,4 @@
-use gpui::{App, IntoElement, ParentElement, RenderOnce, Styled, Window, div, px};
+use gpui::{App, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window, div, px};
 use gpui_component::h_flex;
 
 use super::{
@@ -6,21 +6,31 @@ use super::{
     icons::row_icon,
 };
 use crate::features::file_browser::{
-    rows::{FileRow, RowIntent, kind_label},
+    rows::{RowIntent, RowKind, kind_label},
     tokens,
 };
 
 #[derive(IntoElement)]
 pub(crate) struct FileRowContent {
-    row: FileRow,
+    kind: RowKind,
+    name: SharedString,
+    is_executable: bool,
     selected: bool,
     intent: RowIntent,
 }
 
 impl FileRowContent {
-    pub(crate) fn new(row: FileRow, selected: bool, intent: RowIntent) -> Self {
+    pub(crate) fn new(
+        kind: RowKind,
+        name: SharedString,
+        is_executable: bool,
+        selected: bool,
+        intent: RowIntent,
+    ) -> Self {
         Self {
-            row,
+            kind,
+            name,
+            is_executable,
             selected,
             intent,
         }
@@ -35,27 +45,27 @@ impl RenderOnce for FileRowContent {
             .min_w(px(0.0))
             .flex_1()
             .child(intent_badge(self.intent))
-            .child(row_icon(self.row.kind))
-            .child(executable_badge(self.row.is_executable))
-            .child(FileName::new(self.row.clone(), self.selected))
+            .child(row_icon(self.kind))
+            .child(executable_badge(self.is_executable))
+            .child(FileName::new(self.name, self.selected))
             .child(
                 div()
                     .text_size(px(11.0))
                     .text_color(tokens::TEXT_MUTED)
-                    .child(kind_label(self.row.kind)),
+                    .child(kind_label(self.kind)),
             )
     }
 }
 
 #[derive(IntoElement)]
 struct FileName {
-    row: FileRow,
+    name: SharedString,
     selected: bool,
 }
 
 impl FileName {
-    fn new(row: FileRow, selected: bool) -> Self {
-        Self { row, selected }
+    fn new(name: SharedString, selected: bool) -> Self {
+        Self { name, selected }
     }
 }
 
@@ -68,6 +78,6 @@ impl RenderOnce for FileName {
             } else {
                 tokens::TEXT_SECONDARY
             })
-            .child(self.row.name)
+            .child(self.name)
     }
 }

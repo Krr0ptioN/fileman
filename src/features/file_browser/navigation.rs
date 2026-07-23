@@ -58,7 +58,7 @@ pub fn selected_navigation(panel: &BrowserPanel) -> PanelNavigation {
         },
         false => PanelNavigation::OpenWithSystem {
             path: row.path.clone(),
-            name: row.name.clone(),
+            name: row.name.to_string(),
         },
     }
 }

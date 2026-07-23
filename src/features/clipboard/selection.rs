@@ -23,7 +23,16 @@ pub fn prepare_clipboard(
         }
         _ => {
             let len = targets.len();
-            clipboard.op = Some(ClipboardOp { kind, targets });
+            let paths = targets
+                .iter()
+                .map(|target| target.path.clone())
+                .collect::<std::collections::HashSet<_>>()
+                .into();
+            clipboard.op = Some(ClipboardOp {
+                kind,
+                targets,
+                paths,
+            });
             format!("{label} {len} item(s)")
         }
     };

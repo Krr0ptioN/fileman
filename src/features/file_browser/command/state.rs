@@ -114,8 +114,8 @@ mod tests {
     fn row(name: &str) -> FileRow {
         FileRow {
             kind: RowKind::File(FileFormat::Text),
-            name: name.to_string(),
-            detail: String::new(),
+            name: name.to_string().into(),
+            detail: String::new().into(),
             path: PathBuf::from(format!("/tmp/{name}")),
             is_dir: false,
             is_executable: false,

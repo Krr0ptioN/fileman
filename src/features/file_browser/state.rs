@@ -76,7 +76,7 @@ impl BrowserPanel {
     pub fn selected_name(&self) -> &str {
         self.rows
             .get(self.selected_index)
-            .map(|row| row.name.as_str())
+            .map(|row| row.name.as_ref())
             .unwrap_or("<none>")
     }
 
@@ -96,7 +96,7 @@ impl FileTarget {
     pub fn from_row(row: &FileRow) -> Self {
         Self {
             path: row.path.clone(),
-            name: row.name.clone(),
+            name: row.name.to_string(),
             is_dir: row.is_dir,
         }
     }

@@ -1,18 +1,22 @@
 use gpui::{
-    App, InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled, Window, div, px,
+    App, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window,
+    div, px,
 };
 use gpui_component::h_flex;
 
 use super::row_content::FileRowContent;
 use crate::features::file_browser::{
-    rows::{FileRow, RowIntent},
+    rows::{FileRow, RowIntent, RowKind},
     tokens,
 };
 
 #[derive(IntoElement)]
 pub(crate) struct FileRowItem {
     ix: usize,
-    row: FileRow,
+    kind: RowKind,
+    name: SharedString,
+    detail: SharedString,
+    is_executable: bool,
     selected: bool,
     active: bool,
     intent: RowIntent,
@@ -21,14 +25,17 @@ pub(crate) struct FileRowItem {
 impl FileRowItem {
     pub(crate) fn new(
         ix: usize,
-        row: FileRow,
+        row: &FileRow,
         selected: bool,
         active: bool,
         intent: RowIntent,
     ) -> Self {
         Self {
             ix,
-            row,
+            kind: row.kind,
+            name: row.name.clone(),
+            detail: row.detail.clone(),
+            is_executable: row.is_executable,
             selected,
             active,
             intent,
@@ -68,7 +75,9 @@ impl RenderOnce for FileRowItem {
             .rounded(px(if self.selected { 7.0 } else { 0.0 }))
             .hover(|style| style.bg(tokens::ROW_HOVER))
             .child(FileRowContent::new(
-                self.row.clone(),
+                self.kind,
+                self.name,
+                self.is_executable,
                 self.selected,
                 self.intent,
             ))
@@ -77,7 +86,7 @@ impl RenderOnce for FileRowItem {
                     .flex_shrink_0()
                     .text_size(px(12.0))
                     .text_color(tokens::TEXT_SECONDARY)
-                    .child(self.row.detail),
+                    .child(self.detail),
             )
     }
 }

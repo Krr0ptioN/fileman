@@ -1,3 +1,5 @@
+use std::{collections::HashSet, path::PathBuf, sync::Arc};
+
 use gpui::Global;
 
 use crate::features::file_browser::FileTarget;
@@ -12,6 +14,7 @@ pub enum ClipboardKind {
 pub struct ClipboardOp {
     pub kind: ClipboardKind,
     pub targets: Vec<FileTarget>,
+    pub paths: Arc<HashSet<PathBuf>>,
 }
 
 #[derive(Default)]

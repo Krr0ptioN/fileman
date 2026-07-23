@@ -66,7 +66,7 @@ impl RenderOnce for FilePanel {
                     uniform_list(list_id, row_count, move |range, _, _| {
                         range
                             .map(|ix| {
-                                let row = rows[ix].clone();
+                                let row = &rows[ix];
                                 let is_marked = marked.contains(&row.path);
                                 let intent = row_intent(
                                     &row.path,
