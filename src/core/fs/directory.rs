@@ -8,6 +8,14 @@ pub enum FsEntryKind {
     File,
 }
 
+struct PreparedDirEntry {
+    entry: fs::DirEntry,
+    file_name: std::ffi::OsString,
+    kind: FsEntryKind,
+    is_symlink: bool,
+    metadata: Option<fs::Metadata>,
+}
+
 pub fn read_fs_directory(path: &path::Path) -> anyhow::Result<Vec<DirEntry>> {
     read_fs_directory_filtered(path, |_| true, |_, _| true)
 }
@@ -40,7 +48,16 @@ pub fn read_fs_directory_filtered(
             false => FsEntryKind::File,
         };
         if include_entry(&file_name, kind) {
-            dir_entries.push(dir_entry(entry, file_name, is_symlink, is_dir, metadata)?);
+            dir_entries.push(
+                PreparedDirEntry {
+                    entry,
+                    file_name,
+                    kind,
+                    is_symlink,
+                    metadata,
+                }
+                .into_dir_entry()?,
+            );
         }
     }
 
@@ -48,28 +65,25 @@ pub fn read_fs_directory_filtered(
     Ok(dir_entries)
 }
 
-fn dir_entry(
-    entry: fs::DirEntry,
-    file_name: std::ffi::OsString,
-    is_symlink: bool,
-    is_dir: bool,
-    metadata: Option<fs::Metadata>,
-) -> io::Result<DirEntry> {
-    let metadata = match metadata {
-        Some(metadata) => Some(metadata),
-        None => entry.metadata().ok(),
-    };
+impl PreparedDirEntry {
+    fn into_dir_entry(self) -> io::Result<DirEntry> {
+        let metadata = match self.metadata {
+            Some(metadata) => Some(metadata),
+            None => self.entry.metadata().ok(),
+        };
+        let is_dir = self.kind == FsEntryKind::Directory;
 
-    Ok(DirEntry {
-        name: file_name.to_string_lossy().into_owned(),
-        is_dir,
-        is_symlink,
-        is_executable: is_executable(metadata.as_ref()),
-        link_target: None,
-        location: EntryLocation::Fs(entry.path()),
-        size: metadata.as_ref().filter(|_| !is_dir).map(|m| m.len()),
-        modified: metadata.as_ref().and_then(modified_secs),
-    })
+        Ok(DirEntry {
+            name: self.file_name.to_string_lossy().into_owned(),
+            is_dir,
+            is_symlink: self.is_symlink,
+            is_executable: is_executable(metadata.as_ref()),
+            link_target: None,
+            location: EntryLocation::Fs(self.entry.path()),
+            size: metadata.as_ref().filter(|_| !is_dir).map(|m| m.len()),
+            modified: metadata.as_ref().and_then(modified_secs),
+        })
+    }
 }
 
 fn is_executable(metadata: Option<&fs::Metadata>) -> bool {
