@@ -5,7 +5,7 @@ use std::{
 
 pub fn copy_recursively(src: &Path, dst_dir: &Path) -> io::Result<()> {
     let src_canonical = fs::canonicalize(src)?;
-    let dst_canonical = fs::canonicalize(dst_dir)?;
+    let dst_canonical = resolve_destination(dst_dir)?;
     if dst_canonical.starts_with(&src_canonical) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -67,24 +67,69 @@ fn destination_path(src: &Path, dst_dir: &Path) -> io::Result<PathBuf> {
     Ok(dst_dir.join(file_name))
 }
 
+fn resolve_destination(path: &Path) -> io::Result<PathBuf> {
+    let absolute = match path.is_absolute() {
+        true => path.to_path_buf(),
+        false => std::env::current_dir()?.join(path),
+    };
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::Prefix(_) | std::path::Component::RootDir => {
+                normalized.push(component.as_os_str());
+            }
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            std::path::Component::Normal(part) => normalized.push(part),
+        }
+    }
+
+    let mut cursor = normalized.as_path();
+    let mut missing = Vec::new();
+    loop {
+        match fs::canonicalize(cursor) {
+            Ok(existing) => {
+                return Ok(missing
+                    .into_iter()
+                    .rev()
+                    .fold(existing, |resolved, part| resolved.join(part)));
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                let part = cursor.file_name().ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!("cannot resolve destination {}", path.display()),
+                    )
+                })?;
+                missing.push(part.to_os_string());
+                cursor = cursor.parent().ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!("cannot resolve destination {}", path.display()),
+                    )
+                })?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
 #[cfg(unix)]
 fn copy_symlink(src: &Path, dst_dir: &Path) -> io::Result<()> {
-    use std::os::unix::fs::symlink;
-
     let dest = destination_path(src, dst_dir)?;
-    symlink(fs::read_link(src)?, dest)
+    std::os::unix::fs::symlink(fs::read_link(src)?, dest)
 }
 
 #[cfg(windows)]
 fn copy_symlink(src: &Path, dst_dir: &Path) -> io::Result<()> {
-    use std::os::windows::fs::{symlink_dir, symlink_file};
-
     let target = fs::read_link(src)?;
     let dest = destination_path(src, dst_dir)?;
     if fs::metadata(src)?.is_dir() {
-        symlink_dir(target, dest)
+        std::os::windows::fs::symlink_dir(target, dest)
     } else {
-        symlink_file(target, dest)
+        std::os::windows::fs::symlink_file(target, dest)
     }
 }
 
@@ -132,6 +177,22 @@ mod tests {
             .expect_err("filesystem root should not be copyable");
 
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn creates_missing_destination_directory() {
+        let root = temp_dir("missing-destination");
+        let source = root.join("source.txt");
+        let destination = root.join("new").join("nested");
+        fs::write(&source, "content").expect("write source file");
+
+        copy_recursively(&source, &destination).expect("copy into missing destination");
+
+        assert_eq!(
+            fs::read_to_string(destination.join("source.txt")).expect("read copied file"),
+            "content"
+        );
         fs::remove_dir_all(root).expect("remove test directory");
     }
 
