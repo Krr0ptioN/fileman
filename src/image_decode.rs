@@ -844,6 +844,18 @@ struct JpegComponent {
     ac_table: usize,
 }
 
+struct JpegHeader {
+    qt_tables: [[i32; 64]; 4],
+    dc_huff: [Option<HuffLut>; 4],
+    ac_huff: [Option<HuffLut>; 4],
+    components: Vec<JpegComponent>,
+    width: u16,
+    height: u16,
+    restart_interval: u16,
+    orientation: u16,
+    entropy_start: usize,
+}
+
 struct BitReader<'a> {
     data: &'a [u8],
     pos: usize,
@@ -962,237 +974,216 @@ impl<'a> BitReader<'a> {
     }
 }
 
-/// Decode a baseline JPEG at 1/8 scale using only DC coefficients.
-fn decode_jpeg_dc_only(bytes: &[u8], max_side: u32) -> Option<(DecodedImage, ImageMeta)> {
-    let len = bytes.len();
-    if len < 2 || bytes[0] != 0xFF || bytes[1] != 0xD8 {
+fn jpeg_segment(bytes: &[u8], pos: usize) -> Option<(&[u8], usize)> {
+    let length = usize::from(u16::from_be_bytes([
+        *bytes.get(pos)?,
+        *bytes.get(pos.checked_add(1)?)?,
+    ]));
+    if length < 2 {
         return None;
     }
-    let mut pos = 2usize;
+    let payload_start = pos.checked_add(2)?;
+    let end = pos.checked_add(length)?;
+    Some((bytes.get(payload_start..end)?, end))
+}
 
-    // Parse state
-    let mut qt_tables: [[i32; 64]; 4] = [[0; 64]; 4];
-    let mut dc_huff: [Option<HuffLut>; 4] = [const { None }; 4];
-    let mut ac_huff: [Option<HuffLut>; 4] = [const { None }; 4];
-    let mut components: Vec<JpegComponent> = Vec::new();
-    let mut width = 0u16;
-    let mut height = 0u16;
-    let mut num_components = 0u8;
-    let mut restart_interval: u16 = 0;
-
-    // EXIF orientation (parse from APP1 if present)
-    let mut orientation: u16 = 1;
-
-    while pos + 1 < len {
-        if bytes[pos] != 0xFF {
-            return None;
-        }
-        let marker = bytes[pos + 1];
-        pos += 2;
-
-        match marker {
-            0xD8 => {} // SOI — ignore if repeated
-            0xE1 => {
-                // APP1 — may contain EXIF
-                if pos + 2 > len {
-                    return None;
-                }
-                let seg_len = u16::from_be_bytes([bytes[pos], bytes[pos + 1]]) as usize;
-                if pos + seg_len > len {
-                    return None;
-                }
-                // Try to extract orientation from EXIF
-                let seg_data = &bytes[pos + 2..pos + seg_len];
-                if seg_data.starts_with(b"Exif\0\0") {
-                    let tiff_data = &seg_data[6..];
-                    if let Ok(exif_fields) = exif::parse_exif(tiff_data) {
-                        for f in &exif_fields.0 {
-                            if f.tag == exif::Tag::Orientation
-                                && let exif::Value::Short(ref vals) = f.value
-                                && let Some(&v) = vals.first()
-                            {
-                                orientation = v;
-                            }
-                        }
-                    }
-                }
-                pos += seg_len;
-            }
-            0xE0 | 0xE2..=0xEF | 0xFE => {
-                // APPn / COM — skip
-                if pos + 2 > len {
-                    return None;
-                }
-                let seg_len = u16::from_be_bytes([bytes[pos], bytes[pos + 1]]) as usize;
-                pos += seg_len;
-            }
-            0xDB => {
-                // DQT — quantization tables
-                if pos + 2 > len {
-                    return None;
-                }
-                let seg_len = u16::from_be_bytes([bytes[pos], bytes[pos + 1]]) as usize;
-                let seg_end = pos + seg_len;
-                let mut p = pos + 2;
-                while p < seg_end {
-                    if p >= len {
-                        return None;
-                    }
-                    let pq_tq = bytes[p];
-                    p += 1;
-                    let precision = (pq_tq >> 4) as usize; // 0 = 8-bit, 1 = 16-bit
-                    let table_id = (pq_tq & 0x0F) as usize;
-                    if table_id >= 4 {
-                        return None;
-                    }
-                    if precision == 0 {
-                        if p + 64 > len {
-                            return None;
-                        }
-                        for i in 0..64 {
-                            qt_tables[table_id][i] = bytes[p + i] as i32;
-                        }
-                        p += 64;
-                    } else {
-                        if p + 128 > len {
-                            return None;
-                        }
-                        for i in 0..64 {
-                            qt_tables[table_id][i] = i32::from(u16::from_be_bytes([
-                                bytes[p + i * 2],
-                                bytes[p + i * 2 + 1],
-                            ]));
-                        }
-                        p += 128;
-                    }
-                }
-                pos = seg_end;
-            }
-            0xC4 => {
-                // DHT — Huffman tables
-                if pos + 2 > len {
-                    return None;
-                }
-                let seg_len = u16::from_be_bytes([bytes[pos], bytes[pos + 1]]) as usize;
-                let seg_end = pos + seg_len;
-                let mut p = pos + 2;
-                while p < seg_end {
-                    if p >= len {
-                        return None;
-                    }
-                    let tc_th = bytes[p];
-                    p += 1;
-                    let tc = (tc_th >> 4) as usize; // 0=DC, 1=AC
-                    let th = (tc_th & 0x0F) as usize;
-                    if th >= 4 {
-                        return None;
-                    }
-                    if p + 16 > len {
-                        return None;
-                    }
-                    let mut counts = [0u8; 16];
-                    counts.copy_from_slice(&bytes[p..p + 16]);
-                    p += 16;
-                    let total: usize = counts.iter().map(|&c| c as usize).sum();
-                    if p + total > len {
-                        return None;
-                    }
-                    let symbols = bytes[p..p + total].to_vec();
-                    p += total;
-                    let lut = HuffLut::build(&counts, &symbols);
-                    if tc == 0 {
-                        dc_huff[th] = Some(lut);
-                    } else {
-                        ac_huff[th] = Some(lut);
-                    }
-                }
-                pos = seg_end;
-            }
-            0xC0 => {
-                // SOF0 — baseline DCT
-                if pos + 2 > len {
-                    return None;
-                }
-                let seg_len = u16::from_be_bytes([bytes[pos], bytes[pos + 1]]) as usize;
-                if pos + seg_len > len {
-                    return None;
-                }
-                let p = pos + 2;
-                let _precision = bytes[p]; // must be 8
-                height = u16::from_be_bytes([bytes[p + 1], bytes[p + 2]]);
-                width = u16::from_be_bytes([bytes[p + 3], bytes[p + 4]]);
-                num_components = bytes[p + 5];
-                if num_components == 0 || num_components > 4 {
-                    return None;
-                }
-                components.clear();
-                for i in 0..num_components as usize {
-                    let off = p + 6 + i * 3;
-                    let _id = bytes[off];
-                    let sampling = bytes[off + 1];
-                    let qt = bytes[off + 2] as usize;
-                    components.push(JpegComponent {
-                        h_samp: (sampling >> 4) as usize,
-                        v_samp: (sampling & 0x0F) as usize,
-                        qt_id: qt,
-                        dc_table: 0,
-                        ac_table: 0,
-                    });
-                }
-                pos += seg_len;
-            }
-            0xC2 => {
-                // SOF2 — progressive, bail out
+fn parse_jpeg_orientation(payload: &[u8], current: u16) -> u16 {
+    let Some(tiff_data) = payload.strip_prefix(b"Exif\0\0") else {
+        return current;
+    };
+    let Ok(exif_fields) = exif::parse_exif(tiff_data) else {
+        return current;
+    };
+    exif_fields
+        .0
+        .iter()
+        .find_map(|field| {
+            if field.tag != exif::Tag::Orientation {
                 return None;
             }
-            0xDD => {
-                // DRI — define restart interval
-                if pos + 4 > len {
-                    return None;
-                }
-                restart_interval = u16::from_be_bytes([bytes[pos + 2], bytes[pos + 3]]);
-                pos += 4;
+            match field.value {
+                exif::Value::Short(ref values) => values.first().copied(),
+                _ => None,
             }
-            0xDA => {
-                // SOS — start of scan
-                if pos + 2 > len {
-                    return None;
+        })
+        .unwrap_or(current)
+}
+
+fn parse_jpeg_quantization_tables(payload: &[u8], tables: &mut [[i32; 64]; 4]) -> Option<()> {
+    let mut pos = 0usize;
+    while pos < payload.len() {
+        let descriptor = *payload.get(pos)?;
+        pos += 1;
+        let precision = descriptor >> 4;
+        let table_id = usize::from(descriptor & 0x0F);
+        let table = tables.get_mut(table_id)?;
+        match precision {
+            0 => {
+                let values = payload.get(pos..pos.checked_add(64)?)?;
+                for (target, value) in table.iter_mut().zip(values) {
+                    *target = i32::from(*value);
                 }
-                let seg_len = u16::from_be_bytes([bytes[pos], bytes[pos + 1]]) as usize;
-                if pos + seg_len > len {
-                    return None;
-                }
-                let p = pos + 2;
-                let ns = bytes[p] as usize;
-                if ns != num_components as usize {
-                    return None; // only handle interleaved scans
-                }
-                for (i, comp) in components.iter_mut().enumerate().take(ns) {
-                    let off = p + 1 + i * 2;
-                    let _cs = bytes[off];
-                    let td_ta = bytes[off + 1];
-                    comp.dc_table = (td_ta >> 4) as usize;
-                    comp.ac_table = (td_ta & 0x0F) as usize;
-                }
-                pos += seg_len;
-                // Now decode entropy data
-                break;
+                pos += 64;
             }
-            0xD9 => return None, // EOI before SOS
-            _ => {
-                // Unknown marker — try to skip
-                if pos + 2 > len {
-                    return None;
+            1 => {
+                let values = payload.get(pos..pos.checked_add(128)?)?;
+                for (target, value) in table.iter_mut().zip(values.chunks_exact(2)) {
+                    *target = i32::from(u16::from_be_bytes([value[0], value[1]]));
                 }
-                let seg_len = u16::from_be_bytes([bytes[pos], bytes[pos + 1]]) as usize;
-                pos += seg_len;
+                pos += 128;
             }
+            _ => return None,
         }
     }
+    Some(())
+}
 
-    if width == 0 || height == 0 || components.is_empty() {
+fn parse_jpeg_huffman_tables(
+    payload: &[u8],
+    dc_tables: &mut [Option<HuffLut>; 4],
+    ac_tables: &mut [Option<HuffLut>; 4],
+) -> Option<()> {
+    let mut pos = 0usize;
+    while pos < payload.len() {
+        let descriptor = *payload.get(pos)?;
+        pos += 1;
+        let class = descriptor >> 4;
+        let table_id = usize::from(descriptor & 0x0F);
+        let counts_slice = payload.get(pos..pos.checked_add(16)?)?;
+        let mut counts = [0u8; 16];
+        counts.copy_from_slice(counts_slice);
+        pos += 16;
+        let symbol_count: usize = counts.iter().map(|&count| usize::from(count)).sum();
+        let symbols = payload.get(pos..pos.checked_add(symbol_count)?)?;
+        pos += symbol_count;
+        let table = HuffLut::build(&counts, symbols);
+        match class {
+            0 => dc_tables.get_mut(table_id)?.replace(table),
+            1 => ac_tables.get_mut(table_id)?.replace(table),
+            _ => return None,
+        };
+    }
+    Some(())
+}
+
+fn parse_jpeg_components(payload: &[u8]) -> Option<(u16, u16, Vec<JpegComponent>)> {
+    if *payload.first()? != 8 {
         return None;
     }
+    let height = u16::from_be_bytes([*payload.get(1)?, *payload.get(2)?]);
+    let width = u16::from_be_bytes([*payload.get(3)?, *payload.get(4)?]);
+    let count = usize::from(*payload.get(5)?);
+    if width == 0 || height == 0 || !(1..=4).contains(&count) {
+        return None;
+    }
+    let component_bytes = payload.get(6..6usize.checked_add(count.checked_mul(3)?)?)?;
+    let mut components = Vec::with_capacity(count);
+    for component in component_bytes.chunks_exact(3) {
+        let sampling = component[1];
+        let h_samp = usize::from(sampling >> 4);
+        let v_samp = usize::from(sampling & 0x0F);
+        let qt_id = usize::from(component[2]);
+        if h_samp == 0 || v_samp == 0 || qt_id >= 4 {
+            return None;
+        }
+        components.push(JpegComponent {
+            h_samp,
+            v_samp,
+            qt_id,
+            dc_table: 0,
+            ac_table: 0,
+        });
+    }
+    Some((width, height, components))
+}
+
+fn parse_jpeg_scan(payload: &[u8], components: &mut [JpegComponent]) -> Option<()> {
+    let count = usize::from(*payload.first()?);
+    if count != components.len() {
+        return None;
+    }
+    let selectors_end = 1usize.checked_add(count.checked_mul(2)?)?;
+    let selectors = payload.get(1..selectors_end)?;
+    payload.get(selectors_end..selectors_end.checked_add(3)?)?;
+    for (component, selector) in components.iter_mut().zip(selectors.chunks_exact(2)) {
+        let tables = selector[1];
+        component.dc_table = usize::from(tables >> 4);
+        component.ac_table = usize::from(tables & 0x0F);
+        if component.dc_table >= 4 || component.ac_table >= 4 {
+            return None;
+        }
+    }
+    Some(())
+}
+
+fn parse_jpeg_header(bytes: &[u8]) -> Option<JpegHeader> {
+    if !bytes.starts_with(&[0xFF, 0xD8]) {
+        return None;
+    }
+    let mut header = JpegHeader {
+        qt_tables: [[0; 64]; 4],
+        dc_huff: [const { None }; 4],
+        ac_huff: [const { None }; 4],
+        components: Vec::new(),
+        width: 0,
+        height: 0,
+        restart_interval: 0,
+        orientation: 1,
+        entropy_start: 0,
+    };
+    let mut pos = 2usize;
+    loop {
+        let marker_start = pos.checked_add(1)?;
+        if *bytes.get(pos)? != 0xFF {
+            return None;
+        }
+        let marker = *bytes.get(marker_start)?;
+        pos = pos.checked_add(2)?;
+        if marker == 0xD8 {
+            continue;
+        }
+        if marker == 0xD9 || marker == 0xC2 {
+            return None;
+        }
+        let (payload, end) = jpeg_segment(bytes, pos)?;
+        match marker {
+            0xE1 => {
+                header.orientation = parse_jpeg_orientation(payload, header.orientation);
+            }
+            0xDB => parse_jpeg_quantization_tables(payload, &mut header.qt_tables)?,
+            0xC4 => {
+                parse_jpeg_huffman_tables(payload, &mut header.dc_huff, &mut header.ac_huff)?;
+            }
+            0xC0 => {
+                (header.width, header.height, header.components) = parse_jpeg_components(payload)?;
+            }
+            0xDD => {
+                header.restart_interval = u16::from_be_bytes([*payload.first()?, *payload.get(1)?]);
+            }
+            0xDA => {
+                parse_jpeg_scan(payload, &mut header.components)?;
+                header.entropy_start = end;
+                return Some(header);
+            }
+            _ => {}
+        }
+        pos = end;
+    }
+}
+
+/// Decode a baseline JPEG at 1/8 scale using only DC coefficients.
+fn decode_jpeg_dc_only(bytes: &[u8], max_side: u32) -> Option<(DecodedImage, ImageMeta)> {
+    let JpegHeader {
+        qt_tables,
+        dc_huff,
+        ac_huff,
+        components,
+        width,
+        height,
+        restart_interval,
+        orientation,
+        entropy_start,
+    } = parse_jpeg_header(bytes)?;
 
     let w = width as usize;
     let h = height as usize;
@@ -1206,7 +1197,7 @@ fn decode_jpeg_dc_only(bytes: &[u8], max_side: u32) -> Option<(DecodedImage, Ima
         .map(|c| vec![0.0f32; mcu_w * c.h_samp * mcu_h * c.v_samp])
         .collect();
 
-    let mut reader = BitReader::new(bytes, pos);
+    let mut reader = BitReader::new(bytes, entropy_start);
     let mut dc_pred = [0i32; 4];
     let mut mcu_count = 0u32;
 
@@ -1588,4 +1579,31 @@ fn downscale_rgba(
         }
     }
     (out_w, out_h, out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_jpeg_dc_preview;
+
+    #[test]
+    fn malformed_jpeg_segment_lengths_are_rejected() {
+        let too_short_app1 = [0xFF, 0xD8, 0xFF, 0xE1, 0x00, 0x01];
+        let truncated_sof = [0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x02];
+
+        assert!(decode_jpeg_dc_preview(&too_short_app1, 64).is_none());
+        assert!(decode_jpeg_dc_preview(&truncated_sof, 64).is_none());
+    }
+
+    #[test]
+    fn zero_jpeg_sampling_factor_is_rejected() {
+        let bytes = [
+            0xFF, 0xD8, // SOI
+            0xFF, 0xC0, 0x00, 0x0B, // SOF0, one component
+            0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x00, 0x00, // zero sampling
+            0xFF, 0xDA, 0x00, 0x08, // SOS
+            0x01, 0x01, 0x00, 0x00, 0x3F, 0x00,
+        ];
+
+        assert!(decode_jpeg_dc_preview(&bytes, 64).is_none());
+    }
 }
