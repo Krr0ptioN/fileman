@@ -7,7 +7,9 @@ use crate::features::keybind::{
 
 impl AppKeyHandler<Context<'_, StiffShell>> for StiffShell {
     fn modal_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
-        self.handle_input_mode_key(event, cx) || self.handle_confirm_key(event, cx)
+        self.handle_paste_conflict_key(event, cx)
+            || self.handle_input_mode_key(event, cx)
+            || self.handle_confirm_key(event, cx)
     }
 
     fn control_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {

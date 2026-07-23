@@ -57,6 +57,7 @@ Counts apply to movement and jumps, for example `5j` and `12G`.
 | `yf` / `yc` | Copy files / file contents |
 | `dd` | Mark selection for move |
 | `pp` | Paste |
+| `gc` | Cancel the active file-operation task |
 | `dD` / `x` | Delete |
 | `cw` / `C` | Rename |
 | `nd` | Create directory |
@@ -76,6 +77,11 @@ Counts apply to movement and jumps, for example `5j` and `12G`.
 Moving the browser selection dismisses the displayed preview while retaining
 cached preview data within the current directory. Changing directory clears that
 cached state.
+
+Paste conflicts prompt for skip, overwrite, automatic rename, or cancellation.
+Holding Shift while choosing skip, overwrite, or rename applies that policy to
+the remaining batch. File operations run through the status-bar task queue,
+which reports item/byte progress and retains completion or failure summaries.
 
 ## Architecture
 

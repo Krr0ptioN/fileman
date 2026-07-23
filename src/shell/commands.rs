@@ -2,7 +2,9 @@ use gpui::{Context, UpdateGlobal};
 
 use super::StiffShell;
 use crate::features::{
-    clipboard::apply_clipboard_effect as apply_clipboard_runtime_effect,
+    clipboard::{
+        ClipboardState, PastePlan, apply_clipboard_effect as apply_clipboard_runtime_effect,
+    },
     file_browser::{
         BrowserCommand, BrowserCommandEffect, BrowserCommandOutcome, BrowserCommandState,
         FileOperation, PanelSide, execute_browser_command,
@@ -82,6 +84,7 @@ impl StiffShell {
                 let path = self.active_panel().path.clone();
                 self.load_panel(self.active, path, None, cx);
             }
+            BrowserCommandEffect::CancelActiveTask => self.cancel_active_task(),
         }
 
         if reveal_active {
@@ -102,14 +105,37 @@ impl StiffShell {
             self.status = outcome.status;
         }
         if let Some(paste) = outcome.paste {
-            self.run_operation(
-                FileOperation::Paste {
-                    kind: paste.kind,
-                    targets: paste.targets,
-                    dst_dir: paste.dst_dir,
-                },
-                cx,
-            );
+            self.handle_paste_plan(paste, cx);
+        }
+    }
+
+    pub(super) fn handle_paste_plan(&mut self, plan: PastePlan, cx: &mut Context<Self>) {
+        match plan {
+            PastePlan::Empty => self.status = "clipboard empty".to_string(),
+            PastePlan::Cancelled => {
+                self.pending_paste = None;
+                self.status = "paste cancelled".to_string();
+            }
+            PastePlan::Conflict { conflict, pending } => {
+                self.status = format!(
+                    "{} exists: s skip, o overwrite, r rename, c cancel; Shift applies all",
+                    conflict.destination.display()
+                );
+                self.pending_paste = Some((conflict, pending));
+            }
+            PastePlan::Ready(batch) => {
+                self.pending_paste = None;
+                if batch.clear_after_paste {
+                    ClipboardState::update_global(cx, |clipboard, _| clipboard.clear());
+                }
+                self.run_operation(
+                    FileOperation::Paste {
+                        kind: batch.kind,
+                        items: batch.items,
+                    },
+                    cx,
+                );
+            }
         }
     }
 }

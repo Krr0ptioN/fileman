@@ -1,17 +1,19 @@
 use std::{
-    collections::HashSet,
+    collections::{HashSet, VecDeque},
     path::{Path, PathBuf},
 };
 
 use gpui::{Context, FocusHandle};
 
 use crate::features::{
+    clipboard::{PasteConflict, PendingPaste},
     file_browser::{
         BrowserCommand, BrowserPanel, InputMode, PanelSide, PendingConfirm, PreviewCacheEntry,
         PreviewState,
     },
     keybind::{HeldNavigation, KeybindRegistry, VimCommandState, file_manager_keybinds},
     layout::LayoutState,
+    task_queue::{TaskId, TaskQueue},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,11 +30,15 @@ pub(crate) struct StiffShell {
     pub(super) vim_command: VimCommandState,
     pub(super) input_mode: InputMode,
     pub(super) pending_confirm: Option<PendingConfirm>,
+    pub(super) pending_paste: Option<(PasteConflict, PendingPaste)>,
     pub(super) held_navigation: HeldNavigation,
     pub(super) keybinds: KeybindRegistry<BrowserCommand>,
     pub(super) help_popup_open: bool,
     pub(super) leader_map_open: bool,
     pub(super) operation_in_flight: bool,
+    pub(super) operation_queue: VecDeque<(TaskId, crate::features::file_browser::FileOperation)>,
+    pub(super) task_queue: TaskQueue,
+    pub(super) active_task: Option<TaskId>,
     pub(super) preview: Option<PreviewState>,
     pub(super) preview_generation: u64,
     pub(super) preview_extension_generation: u64,
@@ -65,11 +71,15 @@ impl StiffShell {
             vim_command: VimCommandState::default(),
             input_mode: InputMode::Normal,
             pending_confirm: None,
+            pending_paste: None,
             held_navigation: HeldNavigation::default(),
             keybinds: file_manager_keybinds(),
             help_popup_open: false,
             leader_map_open: false,
             operation_in_flight: false,
+            operation_queue: VecDeque::new(),
+            task_queue: TaskQueue::new(32),
+            active_task: None,
             preview: None,
             preview_generation: 0,
             preview_extension_generation: 0,

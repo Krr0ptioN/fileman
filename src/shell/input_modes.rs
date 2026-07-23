@@ -2,6 +2,7 @@ use gpui::{Context, KeyDownEvent};
 
 use super::StiffShell;
 use crate::features::{
+    clipboard::{PasteConflictDecision, PasteConflictPolicy, resolve_paste_conflict},
     file_browser::{apply_confirm_action, apply_rename_action, start_quick_jump},
     keybind::{
         ControlAction, confirm_key_action, control_action, navigation_input, rename_key_action,
@@ -49,6 +50,36 @@ impl StiffShell {
             }
             None => false,
         }
+    }
+
+    pub(super) fn handle_paste_conflict_key(
+        &mut self,
+        event: &KeyDownEvent,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.pending_paste.is_none() || event.is_held {
+            return false;
+        }
+        let policy = match event.keystroke.key.as_str() {
+            "s" | "S" => PasteConflictPolicy::Skip,
+            "o" | "O" => PasteConflictPolicy::Overwrite,
+            "r" | "R" => PasteConflictPolicy::Rename,
+            "c" | "C" | "escape" => PasteConflictPolicy::Cancel,
+            _ => return true,
+        };
+        let apply_to_all = event.keystroke.modifiers.shift;
+        let Some((_, pending)) = self.pending_paste.take() else {
+            return true;
+        };
+        let plan = resolve_paste_conflict(
+            pending,
+            PasteConflictDecision {
+                policy,
+                apply_to_all,
+            },
+        );
+        self.handle_paste_plan(plan, cx);
+        true
     }
 
     pub(super) fn handle_confirm_key(

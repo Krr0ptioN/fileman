@@ -78,6 +78,7 @@ fn execute_ready_command(
         Paste => BrowserCommandOutcome::effect(BrowserCommandEffect::Clipboard(
             ClipboardEffect::PasteInto(state.active_panel().path.clone()),
         )),
+        CancelTask => BrowserCommandOutcome::effect(BrowserCommandEffect::CancelActiveTask),
         Delete => {
             let targets = effective_targets(state.active_panel());
             let status = prepare_delete(state.pending_confirm, targets);

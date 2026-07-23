@@ -87,36 +87,98 @@ impl StiffShell {
     }
 
     pub(super) fn run_operation(&mut self, operation: FileOperation, cx: &mut Context<Self>) {
+        let task = self.task_queue.enqueue(
+            operation.task_kind(),
+            operation.item_total(),
+            operation.byte_total(),
+        );
+        self.operation_queue.push_back((task, operation));
+        self.status = self.task_queue.status_line();
+        self.start_next_operation(cx);
+    }
+
+    fn start_next_operation(&mut self, cx: &mut Context<Self>) {
         if self.operation_in_flight {
-            self.status = "operation already running".to_string();
             return;
         }
-
+        let Some((task, operation)) = self.operation_queue.pop_front() else {
+            return;
+        };
         self.operation_in_flight = true;
+        self.active_task = Some(task);
         self.status = operation.pending_status();
+        self.task_queue.start(task);
+        let Some(runtime) = self.task_queue.runtime(task) else {
+            self.operation_in_flight = false;
+            return;
+        };
+        self.watch_task_progress(task, cx);
 
         cx.spawn(async move |shell, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async move { operation.run() })
+                .spawn(async move { operation.run(&runtime) })
                 .await;
 
             cx.update(|cx| {
                 let _ = shell.update(cx, |shell, cx| {
                     shell.operation_in_flight = false;
-                    match result {
-                        Ok(status) => {
-                            shell.status = status;
-                            shell.active_panel_mut().clear_marks();
-                            shell.reload_panels_after_operation(cx);
-                        }
-                        Err(error) => shell.status = error.to_string(),
+                    shell.active_task = None;
+                    shell.status = result.status;
+                    if result.cancelled {
+                        shell.task_queue.cancel(task);
+                    } else if result.errors.is_empty() {
+                        shell.task_queue.complete(task);
+                    } else {
+                        shell.task_queue.fail(task, result.errors.join("\n"));
                     }
+                    shell.active_panel_mut().clear_marks();
+                    shell.reload_panels_after_operation(cx);
+                    shell.start_next_operation(cx);
                     cx.notify();
                 });
             })
         })
         .detach();
+    }
+
+    fn watch_task_progress(
+        &mut self,
+        task: crate::features::task_queue::TaskId,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn(async move |shell, cx| {
+            loop {
+                Timer::after(std::time::Duration::from_millis(100)).await;
+                let keep_watching = cx
+                    .update(|cx| {
+                        shell
+                            .update(cx, |shell, cx| {
+                                let active = shell.task_queue.active_id() == Some(task);
+                                if active {
+                                    cx.notify();
+                                }
+                                active
+                            })
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false);
+                if !keep_watching {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    pub(super) fn cancel_active_task(&mut self) {
+        let Some(task) = self.active_task else {
+            self.status = "no active task".to_string();
+            return;
+        };
+        if self.task_queue.cancel(task) {
+            self.status = "cancelling task".to_string();
+        }
     }
 
     pub(super) fn set_status_debounced(&mut self, status: String, cx: &mut Context<Self>) {

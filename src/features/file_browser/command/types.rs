@@ -17,6 +17,7 @@ pub enum BrowserCommand {
     CopyFiles,
     MoveSelection,
     Paste,
+    CancelTask,
     Delete,
     Rename,
     NewDirectory,
@@ -39,6 +40,7 @@ impl BrowserCommand {
                 | Self::SwitchPanel
                 | Self::OpenHelp
                 | Self::NewDirectory
+                | Self::CancelTask
         )
     }
 

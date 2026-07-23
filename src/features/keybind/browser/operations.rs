@@ -32,6 +32,14 @@ pub(super) fn register(registry: &mut Registry) {
     super::bind(registry, "pp", "paste", "Operations", false, |_| {
         BrowserCommand::Paste
     });
+    super::bind(
+        registry,
+        "gc",
+        "cancel active task",
+        "Operations",
+        true,
+        |_| BrowserCommand::CancelTask,
+    );
     super::bind(registry, "dD", "delete", "Operations", false, |_| {
         BrowserCommand::Delete
     });

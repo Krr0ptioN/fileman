@@ -65,6 +65,11 @@ impl Render for StiffShell {
             _ => self.keybinds.leader_continuations(leader_prefix.as_str()),
         };
         let show_leader_map = !leader_entries.is_empty();
+        let task_status = self.task_queue.status_line();
+        let status = match task_status.is_empty() {
+            true => self.status.clone(),
+            false => format!("{} | {task_status}", self.status),
+        };
 
         v_flex()
             .id("stiff-shell")
@@ -77,10 +82,7 @@ impl Render for StiffShell {
             .font_family("Berkeley Mono")
             .child(TitleBar)
             .child(panel_region)
-            .child(CommandBar::new(
-                self.command_mode_label(cx),
-                self.status.as_str(),
-            ))
+            .child(CommandBar::new(self.command_mode_label(cx), status))
             .when(show_leader_map, |this| {
                 this.child(LeaderMap::new(leader_prefix, leader_entries))
             })

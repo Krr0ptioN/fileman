@@ -1,57 +1,298 @@
-use std::path::PathBuf;
+use std::{
+    collections::{HashSet, VecDeque},
+    path::{Path, PathBuf},
+};
 
 use super::{ClipboardKind, ClipboardState};
 use crate::features::file_browser::FileTarget;
 
-// TODO: support pasting into empty directories, and pasting multiple items into the same directory
-// TODO: support pasting with name conflicts (e.g. by auto-renaming)
-// TODO: show progress for long-running paste operations
-// TODO: handle errors more gracefully (e.g. if some items fail to copy/move, still reload the panels and show which ones failed)
-// TODO: support undo for paste operations (e.g. by keeping track of what was copied/moved and where, and providing an "undo paste" command that deletes/moves back those items)
-// TODO: support copying/moving between different
-//  - panels (e.g. by allowing the user to select which panel to paste into, or by automatically pasting into the opposite panel)
-//  - directories in the same panel (e.g. by allowing the user to select which directory to paste into, or by automatically pasting into the current directory)
-//
-// TODO: support copying/moving with different
-//  - options (e.g. by allowing the user to choose whether to overwrite existing files, whether to copy file permissions, etc.)
-//  - modes (e.g. by allowing the user to choose whether to copy/move recursively, whether to follow symlinks, etc.)
-//  - targets (e.g. by allowing the user to choose whether to copy/move the selected items, the marked items, or all items in the current directory)
-//
-// TODO: Windows support: handle differences in file operations (e.g. move semantics, permissions, etc.) and clipboard handling (e.g. file paths vs. file contents)
-//  - UX improvements: show a preview of what will be copied/moved and where, allow the user to cancel the operation while it's in progress, etc.
-//  - Performance improvements: optimize file operations for large files/directories, use async I/O where possible, etc.
-//  - Code improvements: refactor the file operation logic to be more modular and testable, add error handling and logging, etc.
-//  - Future features: support for additional file operations (e.g. compressing/extracting files, creating symbolic links, etc.), support for plugins/extensions that can add new commands and features, etc.
-//
-// TODO: Wayland file clipboard support
-// - If file-list clipboard integration is needed, extend the GPUI platform backend instead of shelling out to wl-clipboard here.
-//
-// NOTE: native text clipboard writes go through GPUI's platform clipboard.
-//
-// NOTE: some of these TODOs may require significant changes to the code structure and architecture, and
-// may be better suited for a future version of the application rather than being implemented all at once.
-// For example, supporting copying/moving between different panels or directories may require a more complex
-// clipboard structure that can keep track of the source and destination of the items being copied/moved,
-// and may also require changes to the UI to allow the user to select the destination for the paste operation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PasteConflictPolicy {
+    Skip,
+    Overwrite,
+    Rename,
+    Cancel,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PasteConflictDecision {
+    pub policy: PasteConflictPolicy,
+    pub apply_to_all: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlannedPaste {
+    pub target: FileTarget,
+    pub destination: PathBuf,
+    pub overwrite: bool,
+}
+
+pub struct PasteBatch {
+    pub kind: ClipboardKind,
+    pub items: Vec<PlannedPaste>,
+    pub clear_after_paste: bool,
+}
+
+pub struct PasteConflict {
+    pub source_name: String,
+    pub destination: PathBuf,
+}
+
+pub struct PendingPaste {
+    kind: ClipboardKind,
+    dst_dir: PathBuf,
+    remaining: VecDeque<FileTarget>,
+    planned: Vec<PlannedPaste>,
+    destinations: HashSet<PathBuf>,
+    apply_policy: Option<PasteConflictPolicy>,
+}
 
 pub enum PastePlan {
     Empty,
-    Ready {
-        kind: ClipboardKind,
-        targets: Vec<FileTarget>,
-        dst_dir: PathBuf,
-        clear_after_paste: bool,
+    Ready(PasteBatch),
+    Conflict {
+        conflict: PasteConflict,
+        pending: PendingPaste,
     },
+    Cancelled,
 }
 
 pub fn plan_paste(clipboard: &ClipboardState, dst_dir: PathBuf) -> PastePlan {
     match clipboard.op.clone() {
-        Some(clipboard) => PastePlan::Ready {
+        Some(clipboard) => advance(PendingPaste {
             kind: clipboard.kind,
-            targets: clipboard.targets,
             dst_dir,
-            clear_after_paste: matches!(clipboard.kind, ClipboardKind::Move),
-        },
+            remaining: clipboard.targets.into(),
+            planned: Vec::new(),
+            destinations: HashSet::new(),
+            apply_policy: None,
+        }),
         None => PastePlan::Empty,
+    }
+}
+
+pub fn resolve_paste_conflict(
+    mut pending: PendingPaste,
+    decision: PasteConflictDecision,
+) -> PastePlan {
+    if decision.policy == PasteConflictPolicy::Cancel {
+        return PastePlan::Cancelled;
+    }
+    if decision.apply_to_all {
+        pending.apply_policy = Some(decision.policy);
+    }
+    apply_policy(&mut pending, decision.policy);
+    advance(pending)
+}
+
+fn advance(mut pending: PendingPaste) -> PastePlan {
+    while let Some(target) = pending.remaining.front() {
+        let destination = pending.dst_dir.join(&target.name);
+        let collides = destination.exists() || pending.destinations.contains(&destination);
+        if collides {
+            if let Some(policy) = pending.apply_policy {
+                apply_policy(&mut pending, policy);
+                continue;
+            }
+            return PastePlan::Conflict {
+                conflict: PasteConflict {
+                    source_name: target.name.clone(),
+                    destination,
+                },
+                pending,
+            };
+        }
+        push_planned(&mut pending, destination, false);
+    }
+
+    PastePlan::Ready(PasteBatch {
+        kind: pending.kind,
+        items: pending.planned,
+        clear_after_paste: pending.kind == ClipboardKind::Move,
+    })
+}
+
+fn apply_policy(pending: &mut PendingPaste, policy: PasteConflictPolicy) {
+    let Some(target) = pending.remaining.front() else {
+        return;
+    };
+    let destination = pending.dst_dir.join(&target.name);
+    match policy {
+        PasteConflictPolicy::Skip => {
+            pending.remaining.pop_front();
+        }
+        PasteConflictPolicy::Overwrite => push_planned(pending, destination, true),
+        PasteConflictPolicy::Rename => {
+            let renamed = available_destination(&destination, &pending.destinations);
+            push_planned(pending, renamed, false);
+        }
+        PasteConflictPolicy::Cancel => {}
+    }
+}
+
+fn push_planned(pending: &mut PendingPaste, destination: PathBuf, overwrite: bool) {
+    if let Some(target) = pending.remaining.pop_front() {
+        pending.destinations.insert(destination.clone());
+        pending.planned.push(PlannedPaste {
+            target,
+            destination,
+            overwrite,
+        });
+    }
+}
+
+fn available_destination(destination: &Path, reserved: &HashSet<PathBuf>) -> PathBuf {
+    let parent = destination.parent().unwrap_or_else(|| Path::new(""));
+    let stem = destination
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("copy");
+    let extension = destination
+        .extension()
+        .and_then(|extension| extension.to_str());
+    for suffix in 1.. {
+        let name = match extension {
+            Some(extension) => format!("{stem} ({suffix}).{extension}"),
+            None => format!("{stem} ({suffix})"),
+        };
+        let candidate = parent.join(name);
+        if !candidate.exists() && !reserved.contains(&candidate) {
+            return candidate;
+        }
+    }
+    unreachable!()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::features::clipboard::types::ClipboardOp;
+    use std::{fs, sync::Arc};
+
+    fn clipboard(targets: Vec<FileTarget>) -> ClipboardState {
+        ClipboardState {
+            op: Some(ClipboardOp {
+                kind: ClipboardKind::Copy,
+                paths: Arc::new(targets.iter().map(|target| target.path.clone()).collect()),
+                targets,
+            }),
+        }
+    }
+
+    fn target(root: &Path, name: &str) -> FileTarget {
+        FileTarget {
+            path: root.join("source").join(name),
+            name: name.to_string(),
+            is_dir: false,
+        }
+    }
+
+    #[test]
+    fn skip_leaves_collision_out_and_continues_batch() {
+        let root = std::env::temp_dir().join(format!("stiff-paste-skip-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("destination")).unwrap();
+        fs::write(root.join("destination/a.txt"), "existing").unwrap();
+        let clipboard = clipboard(vec![target(&root, "a.txt"), target(&root, "b.txt")]);
+
+        let PastePlan::Conflict { pending, .. } = plan_paste(&clipboard, root.join("destination"))
+        else {
+            panic!("expected conflict");
+        };
+        let resolved = resolve_paste_conflict(
+            pending,
+            PasteConflictDecision {
+                policy: PasteConflictPolicy::Skip,
+                apply_to_all: false,
+            },
+        );
+
+        let PastePlan::Ready(batch) = resolved else {
+            panic!("expected ready batch");
+        };
+        assert_eq!(batch.items.len(), 1);
+        assert_eq!(batch.items[0].target.name, "b.txt");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cancel_aborts_remaining_plan() {
+        let root = std::env::temp_dir().join(format!("stiff-paste-cancel-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("destination")).unwrap();
+        fs::write(root.join("destination/a.txt"), "existing").unwrap();
+        let clipboard = clipboard(vec![target(&root, "a.txt"), target(&root, "b.txt")]);
+        let PastePlan::Conflict { pending, .. } = plan_paste(&clipboard, root.join("destination"))
+        else {
+            panic!("expected conflict");
+        };
+
+        assert!(matches!(
+            resolve_paste_conflict(
+                pending,
+                PasteConflictDecision {
+                    policy: PasteConflictPolicy::Cancel,
+                    apply_to_all: false,
+                }
+            ),
+            PastePlan::Cancelled
+        ));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rename_chooses_available_suffix() {
+        let root = std::env::temp_dir().join(format!("stiff-paste-rename-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("destination")).unwrap();
+        fs::write(root.join("destination/a.txt"), "existing").unwrap();
+        fs::write(root.join("destination/a (1).txt"), "existing").unwrap();
+        let clipboard = clipboard(vec![target(&root, "a.txt")]);
+        let PastePlan::Conflict { pending, .. } = plan_paste(&clipboard, root.join("destination"))
+        else {
+            panic!("expected conflict");
+        };
+
+        let PastePlan::Ready(batch) = resolve_paste_conflict(
+            pending,
+            PasteConflictDecision {
+                policy: PasteConflictPolicy::Rename,
+                apply_to_all: false,
+            },
+        ) else {
+            panic!("expected ready batch");
+        };
+        assert_eq!(
+            batch.items[0].destination,
+            root.join("destination/a (2).txt")
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn apply_to_all_resolves_later_collisions_without_prompting() {
+        let root =
+            std::env::temp_dir().join(format!("stiff-paste-apply-all-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("destination")).unwrap();
+        fs::write(root.join("destination/a.txt"), "existing").unwrap();
+        fs::write(root.join("destination/b.txt"), "existing").unwrap();
+        let clipboard = clipboard(vec![target(&root, "a.txt"), target(&root, "b.txt")]);
+        let PastePlan::Conflict { pending, .. } = plan_paste(&clipboard, root.join("destination"))
+        else {
+            panic!("expected conflict");
+        };
+
+        let PastePlan::Ready(batch) = resolve_paste_conflict(
+            pending,
+            PasteConflictDecision {
+                policy: PasteConflictPolicy::Skip,
+                apply_to_all: true,
+            },
+        ) else {
+            panic!("expected ready batch");
+        };
+        assert!(batch.items.is_empty());
+        fs::remove_dir_all(root).unwrap();
     }
 }

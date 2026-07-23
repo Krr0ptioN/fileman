@@ -1,22 +1,37 @@
 use std::{
-    fs, io,
+    fs,
+    io::{self, Read, Write},
     path::{Path, PathBuf},
 };
 
 pub fn copy_recursively(src: &Path, dst_dir: &Path) -> io::Result<()> {
+    let destination = destination_path(src, dst_dir)?;
+    copy_recursively_to(src, &destination)
+}
+
+pub fn copy_recursively_to(src: &Path, destination: &Path) -> io::Result<()> {
+    copy_recursively_to_with_progress(src, destination, &mut |_| {}, &|| false)
+}
+
+pub fn copy_recursively_to_with_progress(
+    src: &Path,
+    destination: &Path,
+    on_bytes: &mut dyn FnMut(u64),
+    cancelled: &dyn Fn() -> bool,
+) -> io::Result<()> {
     let src_canonical = fs::canonicalize(src)?;
-    let dst_canonical = resolve_destination(dst_dir)?;
+    let dst_canonical = resolve_destination(destination)?;
     if dst_canonical.starts_with(&src_canonical) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!(
                 "copy destination {} is inside source {}",
-                dst_dir.display(),
+                destination.display(),
                 src.display()
             ),
         ));
     }
-    copy_entry(src, dst_dir)
+    copy_entry_to(src, destination, on_bytes, cancelled)
 }
 
 pub fn delete_path(path: &Path, is_dir: bool) -> io::Result<()> {
@@ -26,34 +41,68 @@ pub fn delete_path(path: &Path, is_dir: bool) -> io::Result<()> {
     }
 }
 
-fn copy_dir(src: &Path, dst_dir: &Path) -> io::Result<()> {
-    let dest = destination_path(src, dst_dir)?;
-    fs::create_dir_all(&dest)?;
+fn copy_dir_to(
+    src: &Path,
+    destination: &Path,
+    on_bytes: &mut dyn FnMut(u64),
+    cancelled: &dyn Fn() -> bool,
+) -> io::Result<()> {
+    fs::create_dir_all(destination)?;
     for entry in fs::read_dir(src)? {
         let entry = entry?;
         let path = entry.path();
-        copy_entry(&path, &dest)?;
+        copy_entry_to(
+            &path,
+            &destination.join(entry.file_name()),
+            on_bytes,
+            cancelled,
+        )?;
     }
     Ok(())
 }
 
-fn copy_file(src: &Path, dst_dir: &Path) -> io::Result<()> {
-    let dest = destination_path(src, dst_dir)?;
-    if let Some(parent) = dest.parent() {
+fn copy_file_to(
+    src: &Path,
+    destination: &Path,
+    on_bytes: &mut dyn FnMut(u64),
+    cancelled: &dyn Fn() -> bool,
+) -> io::Result<()> {
+    if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::copy(src, dest)?;
+    let mut source = fs::File::open(src)?;
+    let mut target = fs::File::create(destination)?;
+    let mut buffer = vec![0u8; 64 * 1024];
+    loop {
+        if cancelled() {
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "copy cancelled"));
+        }
+        let read = source.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        target.write_all(&buffer[..read])?;
+        on_bytes(read as u64);
+    }
     Ok(())
 }
 
-fn copy_entry(src: &Path, dst_dir: &Path) -> io::Result<()> {
+fn copy_entry_to(
+    src: &Path,
+    destination: &Path,
+    on_bytes: &mut dyn FnMut(u64),
+    cancelled: &dyn Fn() -> bool,
+) -> io::Result<()> {
+    if cancelled() {
+        return Err(io::Error::new(io::ErrorKind::Interrupted, "copy cancelled"));
+    }
     let file_type = fs::symlink_metadata(src)?.file_type();
     if file_type.is_symlink() {
-        copy_symlink(src, dst_dir)
+        copy_symlink_to(src, destination)
     } else if file_type.is_dir() {
-        copy_dir(src, dst_dir)
+        copy_dir_to(src, destination, on_bytes, cancelled)
     } else {
-        copy_file(src, dst_dir)
+        copy_file_to(src, destination, on_bytes, cancelled)
     }
 }
 
@@ -117,19 +166,17 @@ fn resolve_destination(path: &Path) -> io::Result<PathBuf> {
 }
 
 #[cfg(unix)]
-fn copy_symlink(src: &Path, dst_dir: &Path) -> io::Result<()> {
-    let dest = destination_path(src, dst_dir)?;
-    std::os::unix::fs::symlink(fs::read_link(src)?, dest)
+fn copy_symlink_to(src: &Path, destination: &Path) -> io::Result<()> {
+    std::os::unix::fs::symlink(fs::read_link(src)?, destination)
 }
 
 #[cfg(windows)]
-fn copy_symlink(src: &Path, dst_dir: &Path) -> io::Result<()> {
+fn copy_symlink_to(src: &Path, destination: &Path) -> io::Result<()> {
     let target = fs::read_link(src)?;
-    let dest = destination_path(src, dst_dir)?;
     if fs::metadata(src)?.is_dir() {
-        std::os::windows::fs::symlink_dir(target, dest)
+        std::os::windows::fs::symlink_dir(target, destination)
     } else {
-        std::os::windows::fs::symlink_file(target, dest)
+        std::os::windows::fs::symlink_file(target, destination)
     }
 }
 
@@ -141,7 +188,7 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering},
     };
 
-    use super::copy_recursively;
+    use super::{copy_recursively, copy_recursively_to_with_progress};
 
     static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -193,6 +240,29 @@ mod tests {
             fs::read_to_string(destination.join("source.txt")).expect("read copied file"),
             "content"
         );
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn progress_copy_stops_when_cancelled() {
+        use std::cell::Cell;
+
+        let root = temp_dir("cancel-progress");
+        let source = root.join("source.bin");
+        let destination = root.join("destination.bin");
+        fs::write(&source, vec![7u8; 128 * 1024]).expect("write source file");
+        let copied = Cell::new(0u64);
+
+        let error = copy_recursively_to_with_progress(
+            &source,
+            &destination,
+            &mut |bytes| copied.set(copied.get() + bytes),
+            &|| copied.get() >= 64 * 1024,
+        )
+        .expect_err("copy should cancel");
+
+        assert_eq!(error.kind(), std::io::ErrorKind::Interrupted);
+        assert_eq!(copied.get(), 64 * 1024);
         fs::remove_dir_all(root).expect("remove test directory");
     }
 

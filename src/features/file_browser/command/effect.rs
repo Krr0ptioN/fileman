@@ -16,6 +16,7 @@ pub enum BrowserCommandEffect {
     TogglePaneMode,
     OpenHelp,
     ReloadActive,
+    CancelActiveTask,
 }
 
 pub struct BrowserCommandOutcome {

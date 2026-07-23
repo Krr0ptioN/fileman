@@ -24,13 +24,7 @@ pub enum ClipboardEffect {
 
 pub struct ClipboardEffectOutcome {
     pub status: String,
-    pub paste: Option<ClipboardPaste>,
-}
-
-pub struct ClipboardPaste {
-    pub kind: ClipboardKind,
-    pub targets: Vec<FileTarget>,
-    pub dst_dir: PathBuf,
+    pub paste: Option<PastePlan>,
 }
 
 pub fn apply_clipboard_effect<T>(
@@ -74,23 +68,9 @@ fn paste_into<T>(dst_dir: PathBuf, cx: &mut Context<T>) -> ClipboardEffectOutcom
             status: "clipboard empty".to_string(),
             paste: None,
         },
-        PastePlan::Ready {
-            kind,
-            targets,
-            dst_dir,
-            clear_after_paste,
-        } => {
-            if clear_after_paste {
-                ClipboardState::update_global(cx, |clipboard, _| clipboard.clear());
-            }
-            ClipboardEffectOutcome {
-                status: String::new(),
-                paste: Some(ClipboardPaste {
-                    kind,
-                    targets,
-                    dst_dir,
-                }),
-            }
-        }
+        plan => ClipboardEffectOutcome {
+            status: String::new(),
+            paste: Some(plan),
+        },
     }
 }
